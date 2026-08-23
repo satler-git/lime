@@ -1,0 +1,32 @@
+import { Check, Plus } from 'lucide-react'
+
+type Candidate = { word: string; context: string }
+
+type BatchAddPanelProps = {
+  candidates: Candidate[]
+  selected?: string[]
+  onToggle?: (word: string) => void
+  onAdd?: () => void
+}
+
+export function BatchAddPanel({ candidates, selected = [], onToggle, onAdd }: BatchAddPanelProps) {
+  return (
+    <section className="max-w-[620px] rounded-[10px] border border-line bg-surface p-5" aria-labelledby="batch-title">
+      <p className="m-0 text-[10px] font-semibold tracking-[.1em] text-text-faint">読了後にまとめて追加</p>
+      <h2 id="batch-title" className="m-0 mt-2 font-serif text-[28px] font-normal leading-tight tracking-[-.035em]">調べた単語</h2>
+      <p className="my-[13px] mb-[17px] text-[13px] leading-normal text-text-muted">読中に調べた、まだ SRS にない単語です。追加する単語を選んでください。</p>
+      <div className="flex flex-col gap-[5px]">
+        {candidates.map((candidate) => {
+          const isSelected = selected.includes(candidate.word)
+          return (
+            <button className={`flex min-h-12 w-full cursor-pointer items-center gap-[9px] rounded-[7px] border border-transparent bg-surface-raised p-[6px_9px] text-left transition-[background-color,border-color,transform] duration-120 hover:bg-surface-hover active:scale-[.99] ${isSelected ? 'border-[rgba(194,230,111,.4)] bg-[rgba(194,230,111,.11)]' : ''}`} key={candidate.word} type="button" aria-pressed={isSelected} onClick={() => onToggle?.(candidate.word)}>
+              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${isSelected ? 'border-accent bg-accent text-accent-ink' : 'border-text-faint'}`}>{isSelected && <Check size={14} strokeWidth={2.4} aria-hidden="true" />}</span>
+              <span className="flex min-w-0 flex-col gap-0.5"><strong className="font-serif text-[17px] font-medium">{candidate.word}</strong><small className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-text-faint">{candidate.context}</small></span>
+            </button>
+          )
+        })}
+      </div>
+      <button className="mt-[15px] flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-[7px] rounded-[7px] border-0 bg-accent px-[13px] text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.96]" type="button" disabled={!selected.length} onClick={onAdd}><Plus size={17} strokeWidth={2.2} aria-hidden="true" /> 選択した {selected.length} 語を SRS に追加</button>
+    </section>
+  )
+}

@@ -1,0 +1,265 @@
+import type { CardId } from '../domain/card'
+import {
+  type LookupEvent,
+  type ReadingSession,
+  type ReadingSessionServiceOptions,
+  type SessionClock,
+  type SessionCycle,
+  type SessionIdFactory,
+  type SessionStatus,
+  type TextPosition,
+  type LookupSource,
+  type UnregisteredLookup,
+} from './types'
+
+export type RecordLookupInput = {
+  word: string
+  source: LookupSource
+  position: TextPosition
+  /** Defaults to the service clock when omitted. */
+  timestamp?: Date
+  inSrs: boolean
+}
+
+export class SessionTransitionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SessionTransitionError'
+  }
+}
+
+export class InvalidLookupError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidLookupError'
+  }
+}
+
+const defaultClock: SessionClock = () => new Date()
+
+const defaultIdFactory: SessionIdFactory = (kind = 'id') => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+const copyDate = (date: Date): Date => new Date(date.getTime())
+
+const copyPosition = (position: TextPosition): TextPosition => ({
+  paragraph: position.paragraph,
+  character: position.character,
+})
+
+const copyLookupEvent = (event: LookupEvent): LookupEvent => ({
+  ...event,
+  position: copyPosition(event.position),
+  timestamp: copyDate(event.timestamp),
+})
+
+/** Clone a session at the boundary of every operation. */
+export function cloneReadingSession(session: ReadingSession): ReadingSession {
+  return {
+    ...session,
+    cardIds: [...session.cardIds],
+    createdAt: copyDate(session.createdAt),
+    ...(session.startedAt === undefined ? {} : { startedAt: copyDate(session.startedAt) }),
+    ...(session.quizStartedAt === undefined ? {} : { quizStartedAt: copyDate(session.quizStartedAt) }),
+    ...(session.completedAt === undefined ? {} : { completedAt: copyDate(session.completedAt) }),
+    ...(session.abandonedAt === undefined ? {} : { abandonedAt: copyDate(session.abandonedAt) }),
+    lookupEvents: session.lookupEvents.map(copyLookupEvent),
+  }
+}
+
+const assertDate = (date: Date, name: string): void => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new TypeError(`${name} must be a valid Date`)
+  }
+}
+
+const assertPosition = (position: TextPosition): void => {
+  if (!Number.isInteger(position.paragraph) || position.paragraph < 0) {
+    throw new InvalidLookupError('position.paragraph must be a non-negative integer')
+  }
+  if (!Number.isInteger(position.character) || position.character < 0) {
+    throw new InvalidLookupError('position.character must be a non-negative integer')
+  }
+}
+
+const normalizeApostrophes = (word: string): string => word.replace(/[\u2018\u2019\u201B\u2032\uFF07]/g, "'")
+
+/** Normalize case, Unicode compatibility forms, whitespace, and apostrophe style. */
+export function normalizeLookupWord(word: string): string {
+  return normalizeApostrophes(word.normalize('NFKC')).trim().toLocaleLowerCase('en-US').replace(/\s+/g, ' ')
+}
+
+const cardIdsFromCycle = (cycle: SessionCycle): CardId[] => cycle.map((item) => typeof item === 'string' ? item : item.id)
+
+const assertCanTransition = (session: ReadingSession, expected: SessionStatus, next: SessionStatus): void => {
+  if (session.status !== expected) {
+    throw new SessionTransitionError(`Cannot transition session from ${session.status} to ${next}; expected ${expected}`)
+  }
+}
+
+const assertReading = (session: ReadingSession): void => {
+  if (session.status !== 'reading') {
+    throw new SessionTransitionError(`Cannot record a lookup in a ${session.status} session; session must be reading`)
+  }
+}
+
+/**
+ * Pure reading-session state service. It never mutates a supplied session or
+ * stores state internally; callers can persist each returned snapshot through
+ * any repository implementation.
+ */
+export class ReadingSessionService {
+  private readonly clock: SessionClock
+  private readonly idFactory: SessionIdFactory
+
+  constructor(options: ReadingSessionServiceOptions = {}) {
+    this.clock = options.clock ?? defaultClock
+    this.idFactory = options.idFactory ?? defaultIdFactory
+  }
+
+  /** Capture the cycle's card IDs without retaining references to the cycle. */
+  createSnapshot(cycle: SessionCycle): ReadingSession {
+    const createdAt = copyDate(this.clock())
+    assertDate(createdAt, 'clock result')
+
+    return {
+      id: this.idFactory('session'),
+      cardIds: cardIdsFromCycle(cycle),
+      status: 'created',
+      createdAt,
+      lookupEvents: [],
+    }
+  }
+
+  createSession(cycle: SessionCycle): ReadingSession {
+    return this.createSnapshot(cycle)
+  }
+
+  startReading(session: ReadingSession, at = this.clock()): ReadingSession {
+    assertCanTransition(session, 'created', 'reading')
+    assertDate(at, 'start time')
+    const snapshot = cloneReadingSession(session)
+    return { ...snapshot, status: 'reading', startedAt: copyDate(at) }
+  }
+
+  transitionToQuiz(session: ReadingSession, at = this.clock()): ReadingSession {
+    assertCanTransition(session, 'reading', 'quiz')
+    assertDate(at, 'quiz start time')
+    const snapshot = cloneReadingSession(session)
+    return { ...snapshot, status: 'quiz', quizStartedAt: copyDate(at) }
+  }
+
+  complete(session: ReadingSession, at = this.clock()): ReadingSession {
+    assertCanTransition(session, 'quiz', 'completed')
+    assertDate(at, 'completion time')
+    const snapshot = cloneReadingSession(session)
+    return { ...snapshot, status: 'completed', completedAt: copyDate(at) }
+  }
+
+  abandon(session: ReadingSession, at = this.clock()): ReadingSession {
+    if (session.status === 'completed' || session.status === 'abandoned') {
+      throw new SessionTransitionError(`Cannot abandon a ${session.status} session`)
+    }
+    assertDate(at, 'abandon time')
+    const snapshot = cloneReadingSession(session)
+    return { ...snapshot, status: 'abandoned', abandonedAt: copyDate(at) }
+  }
+
+  recordLookup(session: ReadingSession, input: RecordLookupInput): ReadingSession {
+    assertReading(session)
+    const word = input.word.trim()
+    if (word.length === 0) {
+      throw new InvalidLookupError('A lookup word is required')
+    }
+    if (input.source !== 'article' && input.source !== 'example') {
+      throw new InvalidLookupError('Lookup source must be article or example')
+    }
+    assertPosition(input.position)
+    if (typeof input.inSrs !== 'boolean') {
+      throw new InvalidLookupError('inSrs must be a boolean')
+    }
+    const timestamp = copyDate(input.timestamp ?? this.clock())
+    assertDate(timestamp, 'lookup timestamp')
+
+    const event: LookupEvent = {
+      id: this.idFactory('lookup'),
+      word,
+      source: input.source,
+      position: copyPosition(input.position),
+      timestamp,
+      inSrs: input.inSrs,
+    }
+    const snapshot = cloneReadingSession(session)
+    return { ...snapshot, lookupEvents: [...snapshot.lookupEvents, event] }
+  }
+
+  recordDictionaryLookup(session: ReadingSession, input: RecordLookupInput): ReadingSession {
+    return this.recordLookup(session, input)
+  }
+
+  /** Return one candidate per normalized unregistered word, in first-seen order. */
+  getUnregisteredLookups(session: ReadingSession): UnregisteredLookup[] {
+    const candidates = new Map<string, UnregisteredLookup>()
+    for (const event of session.lookupEvents) {
+      if (event.inSrs) continue
+      const normalizedWord = normalizeLookupWord(event.word)
+      if (normalizedWord.length === 0) continue
+      const existing = candidates.get(normalizedWord)
+      if (existing === undefined) {
+        candidates.set(normalizedWord, { word: event.word, lookupCount: 1 })
+      } else {
+        existing.lookupCount += 1
+      }
+    }
+    return [...candidates.values()]
+  }
+
+  getUnregisteredWordCandidates(session: ReadingSession): UnregisteredLookup[] {
+    return this.getUnregisteredLookups(session)
+  }
+}
+
+export function createSessionSnapshot(cycle: SessionCycle, options?: ReadingSessionServiceOptions): ReadingSession {
+  return new ReadingSessionService(options).createSnapshot(cycle)
+}
+
+export const createReadingSession = createSessionSnapshot
+
+export function startReading(session: ReadingSession, at?: Date): ReadingSession {
+  const transitionTime = at ?? new Date()
+  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).startReading(session, transitionTime)
+}
+
+export function transitionToQuiz(session: ReadingSession, at?: Date): ReadingSession {
+  const transitionTime = at ?? new Date()
+  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).transitionToQuiz(session, transitionTime)
+}
+
+export function completeReadingSession(session: ReadingSession, at?: Date): ReadingSession {
+  const transitionTime = at ?? new Date()
+  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).complete(session, transitionTime)
+}
+
+export const completeSession = completeReadingSession
+
+export function abandonReadingSession(session: ReadingSession, at?: Date): ReadingSession {
+  const transitionTime = at ?? new Date()
+  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).abandon(session, transitionTime)
+}
+
+export const abandonSession = abandonReadingSession
+
+export function recordDictionaryLookup(session: ReadingSession, input: RecordLookupInput, options?: ReadingSessionServiceOptions): ReadingSession {
+  return new ReadingSessionService(options).recordLookup(session, input)
+}
+
+export function getUnregisteredLookups(session: ReadingSession): UnregisteredLookup[] {
+  return new ReadingSessionService().getUnregisteredLookups(session)
+}
+
+export const getUnregisteredWordCandidates = getUnregisteredLookups

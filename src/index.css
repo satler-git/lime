@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", sans-serif;
+  --font-serif: Newsreader, Georgia, serif;
+  --color-background: #151714;
+  --color-surface: #1d211d;
+  --color-surface-raised: #242923;
+  --color-surface-hover: #2b3129;
+  --color-text: #e8e9e2;
+  --color-text-muted: #a1a89c;
+  --color-text-faint: #747c70;
+  --color-line: #363c34;
+  --color-accent: #c2e66f;
+  --color-accent-strong: #d2f38a;
+  --color-accent-ink: #253016;
+  --color-word-new: #c2e66f;
+  --color-word-review: #8fc5de;
+  --color-again: #f28e79;
+  --color-hard: #e5bd6b;
+  --color-good: #c2e66f;
+  --color-easy: #8fc5de;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body { @apply m-0 min-h-screen min-w-[320px] bg-background text-text; }
+  button { @apply font-sans text-text; }
+  button:focus-visible { @apply outline-2 outline-accent outline-offset-3; }
+  button:disabled { @apply cursor-not-allowed opacity-45; }
+}
+
+@keyframes dictionary-popover-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes dictionary-rating-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes dictionary-undo-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes dictionary-add-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}

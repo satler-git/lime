@@ -1,0 +1,41 @@
+{
+  "name": "lime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.1.1",
+    "@fontsource/newsreader": "^5.1.1",
+    "@radix-ui/react-popover": "^1.1.23",
+    "hono": "^4.13.3",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ts-fsrs": "^5.4.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "@storybook/addon-essentials": "^8.5.0",
+    "@storybook/react": "^8.6.18",
+    "@storybook/react-vite": "^8.5.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.5",
+    "storybook": "^8.5.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
+  }
+}
