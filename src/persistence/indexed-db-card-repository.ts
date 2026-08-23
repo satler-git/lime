@@ -1,5 +1,11 @@
 import type { Card, CardId, CardState } from '../domain/card'
 import type { CardRepository } from '../repositories/card-repository'
+import {
+  namespaceDatabaseName,
+  openObjectStore,
+  requestResult,
+  transactionDone,
+} from './indexed-db-persistence-helpers'
 
 type PersistedCard = {
   id: CardId
@@ -17,22 +23,19 @@ type PersistedCard = {
   lastReview: string | null
 }
 
+/**
+ * `dbName` is the base database name. It remains unchanged when `userId` is
+ * omitted; when supplied, an unambiguous length-prefixed user namespace is
+ * appended. A custom `dbName` + `storeName` pair is dedicated to this adapter;
+ * it is not a supported arbitrary cross-adapter sharing mechanism, even when
+ * another adapter requests the same store name.
+ */
 export type IndexedDbCardRepositoryOptions = {
   dbName?: string
+  userId?: string
   storeName?: string
   indexedDB?: IDBFactory
 }
-
-const requestResult = <T>(request: IDBRequest<T>): Promise<T> => new Promise((resolve, reject) => {
-  request.onsuccess = () => resolve(request.result)
-  request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
-})
-
-const transactionDone = (transaction: IDBTransaction): Promise<void> => new Promise((resolve, reject) => {
-  transaction.oncomplete = () => resolve()
-  transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'))
-  transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
-})
 
 const serialize = (card: Card): PersistedCard => {
   const { createdAt, due, lastReview, ...values } = card
@@ -61,7 +64,7 @@ export class IndexedDbCardRepository implements CardRepository {
   private database?: Promise<IDBDatabase>
 
   constructor(options: IndexedDbCardRepositoryOptions = {}) {
-    this.dbName = options.dbName ?? 'lime'
+    this.dbName = namespaceDatabaseName(options.dbName ?? 'lime', options.userId)
     this.storeName = options.storeName ?? 'cards'
     this.indexedDB = options.indexedDB ?? globalThis.indexedDB
 
@@ -71,16 +74,17 @@ export class IndexedDbCardRepository implements CardRepository {
   }
 
   private open(): Promise<IDBDatabase> {
-    this.database ??= new Promise((resolve, reject) => {
-      const request = this.indexedDB.open(this.dbName, 1)
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(this.storeName)) {
-          request.result.createObjectStore(this.storeName, { keyPath: 'id' })
-        }
-      }
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error ?? new Error('Could not open IndexedDB'))
-    })
+    if (this.database === undefined) {
+      const opening = openObjectStore(this.indexedDB, this.dbName, this.storeName, {
+        onVersionChange: () => {
+          this.database = undefined
+        },
+      })
+      this.database = opening
+      opening.catch(() => {
+        if (this.database === opening) this.database = undefined
+      })
+    }
 
     return this.database
   }
@@ -122,8 +126,9 @@ export class IndexedDbCardRepository implements CardRepository {
   }
 
   async close(): Promise<void> {
-    const database = await this.database
+    const cachedDatabase = this.database
+    const database = await cachedDatabase?.catch(() => undefined)
     database?.close()
-    this.database = undefined
+    if (this.database === cachedDatabase) this.database = undefined
   }
 }

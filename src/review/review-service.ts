@@ -1,6 +1,7 @@
 import type { CardService } from '../application/card-service'
 import { cloneCard, type CardId, type Rating } from '../domain/card'
 import type { ReadingSession } from '../session/types'
+import { cloneReviewAction } from './repository'
 import type {
   CardReviewService,
   ReviewAction,
@@ -119,7 +120,7 @@ export class ReviewService {
     return {
       previous: cloneCard(action.previousState),
       next: cloneCard(action.nextState),
-      action,
+      action: cloneReviewAction(action),
     }
   }
 
@@ -178,9 +179,9 @@ export class ReviewService {
     await this.actionRepository.save(undoneAction)
 
     return {
-      previous: latest.nextState,
-      next: latest.previousState,
-      action: undoneAction,
+      previous: cloneCard(undoneAction.nextState),
+      next: cloneCard(undoneAction.previousState),
+      action: cloneReviewAction(undoneAction),
     }
   }
 

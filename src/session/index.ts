@@ -1,4 +1,5 @@
 export * from './types'
 export * from './repository'
 export * from './in-memory-session-repository'
+export * from '../persistence/indexed-db-reading-session-repository'
 export * from './session-service'

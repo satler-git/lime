@@ -33,10 +33,13 @@ export class InMemoryReviewActionRepository implements ReviewActionRepository {
         continue
       }
 
-      // Map iteration is insertion ordered. Replacing on an equal timestamp
-      // makes the tie break deterministic in favor of the most recently saved
-      // action while still selecting by timestamp first.
-      if (latest === undefined || action.timestamp.getTime() >= latest.timestamp.getTime()) {
+      // Select by timestamp first, then use the action ID so all repository
+      // implementations make the same deterministic choice on a tie.
+      if (
+        latest === undefined
+        || action.timestamp.getTime() > latest.timestamp.getTime()
+        || (action.timestamp.getTime() === latest.timestamp.getTime() && action.id > latest.id)
+      ) {
         latest = action
       }
     }

@@ -113,7 +113,7 @@ describe('ReviewService', () => {
     await expect(actionRepository.findLatestNonUndone(session.id, card.id)).resolves.toMatchObject({ id: second.action.id })
   })
 
-  it('selects the greatest timestamp and uses insertion order to break ties', async () => {
+  it('selects the greatest timestamp and action ID to break ties', async () => {
     const { card, actionRepository, reviewService } = await makeReviewService()
     const first = await reviewService.review(makeSession(), card.id, 'good', reviewTime)
     const earlier = new Date('2025-01-01T00:01:30.000Z')
@@ -127,8 +127,9 @@ describe('ReviewService', () => {
 
     const tie = new Date('2025-01-01T00:03:00.000Z')
     actionRepository.clear()
-    await actionRepository.save({ ...first.action, id: 'tie-first', timestamp: tie })
+    // Save in reverse ID order to prove insertion order is not the tie-breaker.
     await actionRepository.save({ ...first.action, id: 'tie-second', timestamp: tie })
+    await actionRepository.save({ ...first.action, id: 'tie-first', timestamp: tie })
 
     await expect(actionRepository.findLatestNonUndone('session-1', card.id)).resolves.toMatchObject({ id: 'tie-second' })
   })
@@ -146,6 +147,34 @@ describe('ReviewService', () => {
     expect(undone.action.undoneAt).toEqual(new Date('2025-01-01T00:02:00.000Z'))
     await expect(cardRepository.load(card.id)).resolves.toEqual(card)
     await expect(actionRepository.load(reviewed.action.id)).resolves.toMatchObject({ undone: true })
+  })
+
+  it('isolates undo result snapshots from one another and from persisted history', async () => {
+    const { card, cardRepository, reviewService, actionRepository } = await makeReviewService()
+    const reviewed = await reviewService.review(makeSession(), card.id, 'good', reviewTime)
+    const undone = await reviewService.undo(makeSession(), card.id, reviewed.action.id)
+    const reviewedNextDue = new Date(reviewed.next.due)
+    const cardDue = new Date(card.due)
+
+    expect(undone.previous).not.toBe(undone.action.nextState)
+    expect(undone.next).not.toBe(undone.action.previousState)
+    expect(undone.action).not.toBe(reviewed.action)
+
+    undone.previous.due.setUTCDate(2)
+    undone.next.due.setUTCDate(3)
+    undone.action.nextState.due.setUTCDate(4)
+    undone.action.previousState.due.setUTCDate(5)
+    undone.action.timestamp.setUTCDate(6)
+    undone.action.undoneAt?.setUTCDate(7)
+
+    expect(reviewed.next.due).toEqual(reviewedNextDue)
+    expect(card.due).toEqual(cardDue)
+    await expect(cardRepository.load(card.id)).resolves.toEqual(card)
+    await expect(actionRepository.load(reviewed.action.id)).resolves.toMatchObject({
+      previousState: reviewed.action.previousState,
+      nextState: reviewed.action.nextState,
+      timestamp: reviewed.action.timestamp,
+    })
   })
 
   it('rejects stale, invalid, and duplicate undo requests without changing the card', async () => {
