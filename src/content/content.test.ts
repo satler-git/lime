@@ -3,6 +3,7 @@ import {
   ContentParseError,
   ContentValidationError,
   OpenAICompatibleFetchClient,
+  TextGenerationRequestError,
   buildGenerationPrompt,
   generateCycleContent,
   parseGeneratedJson,
@@ -35,6 +36,18 @@ const content: CycleContent = {
 }
 
 const responseFor = (value: unknown, init?: ResponseInit): Response => new Response(JSON.stringify(value), init)
+
+const serializeErrorGraph = (value: unknown, seen = new Set<object>()): string => {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return String(value)
+  if (seen.has(value)) return '[Circular]'
+  seen.add(value)
+
+  const properties = Object.getOwnPropertyNames(value).map((property) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, property)
+    return `${property}:${serializeErrorGraph(descriptor?.value, seen)}`
+  })
+  return `{${properties.join(',')}}`
+}
 
 describe('generation spec and prompt', () => {
   it('includes the requested theme, style, target, and JSON-only constraints', () => {
@@ -104,8 +117,22 @@ describe('generated JSON parsing', () => {
     expect(parseGeneratedJson(`\n\`\`\`json\n${json}\n\`\`\`\n`)).toEqual(content)
   })
 
-  it('rejects malformed JSON', () => {
-    expect(() => parseGeneratedJson('{not-json}')).toThrowError(ContentParseError)
+  it('rejects malformed JSON without retaining generated-output secrets', () => {
+    const secret = 'sk-generated-output-secret'
+    const malformed = `{"article":"${secret}",`
+    const error = (() => {
+      try {
+        parseGeneratedJson(malformed)
+      } catch (caught: unknown) {
+        return caught
+      }
+      return undefined
+    })()
+
+    expect(error).toBeInstanceOf(ContentParseError)
+    expect((error as Error).message).toBe('Generated output is not valid JSON')
+    expect((error as Error).cause).toBeUndefined()
+    expect(serializeErrorGraph(error)).not.toContain(secret)
   })
 })
 
@@ -134,20 +161,49 @@ describe('OpenAI-compatible fetch client', () => {
     })
   })
 
-  it('turns network and HTTP failures into safe request errors', async () => {
+  it('turns network, JSON, and HTTP failures into safe request errors', async () => {
+    const secret = 'secret-api-key'
+    const networkFailure = Object.assign(
+      new Error(`request failed for https://llm.example.test?api_key=${secret}`),
+      { requestHeaders: { Authorization: `Bearer ${secret}` } },
+    )
     const networkClient = new OpenAICompatibleFetchClient({
       endpoint: 'https://llm.example.test',
       model: 'model',
-      apiKey: 'do-not-leak',
-      fetch: vi.fn(async () => { throw new Error('network') }),
+      apiKey: secret,
+      fetch: vi.fn(async () => { throw networkFailure }),
     })
-    await expect(networkClient.generate('prompt')).rejects.toThrowError('Text generation request failed')
-    await expect(networkClient.generate('prompt')).rejects.not.toThrowError('do-not-leak')
+    const networkError = await networkClient.generate('prompt').catch((error: unknown) => error)
+    expect(networkError).toBeInstanceOf(TextGenerationRequestError)
+    expect((networkError as Error).name).toBe('TextGenerationRequestError')
+    expect((networkError as Error).message).toBe('Text generation request failed')
+    expect((networkError as Error).cause).toBeUndefined()
+    expect(serializeErrorGraph(networkError)).not.toContain(secret)
+
+    const response = responseFor({}, { status: 200 })
+    response.json = async () => {
+      throw Object.assign(new Error(`invalid response from ${secret}`), {
+        responseHeaders: { Authorization: `Bearer ${secret}` },
+      })
+    }
+    const jsonClient = new OpenAICompatibleFetchClient({
+      endpoint: 'https://llm.example.test',
+      model: 'model',
+      apiKey: secret,
+      fetch: vi.fn(async () => response),
+    })
+    const jsonError = await jsonClient.generate('prompt').catch((error: unknown) => error)
+    expect(jsonError).toBeInstanceOf(TextGenerationRequestError)
+    expect((jsonError as Error).name).toBe('TextGenerationRequestError')
+    expect((jsonError as Error).message).toBe('Text generation response was not valid JSON')
+    expect((jsonError as { status?: number }).status).toBe(200)
+    expect((jsonError as Error).cause).toBeUndefined()
+    expect(serializeErrorGraph(jsonError)).not.toContain(secret)
 
     const httpClient = new OpenAICompatibleFetchClient({
       endpoint: 'https://llm.example.test',
       model: 'model',
-      apiKey: 'secret',
+      apiKey: secret,
       fetch: vi.fn(async () => responseFor({ error: 'bad request' }, { status: 400 })),
     })
     await expect(httpClient.generate('prompt')).rejects.toThrowError(/status 400/)

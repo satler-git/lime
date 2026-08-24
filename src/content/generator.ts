@@ -19,10 +19,3 @@ export class CycleContentGenerator {
     return generateCycleContent(spec, this.client)
   }
 }
-
-export class ContentGenerationService extends CycleContentGenerator {}
-export { CycleContentGenerator as ContentGenerator }
-
-export function createContentGenerator(client: TextGenerationClient): CycleContentGenerator {
-  return new CycleContentGenerator(client)
-}

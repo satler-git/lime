@@ -65,8 +65,10 @@ export class OpenAICompatibleFetchClient implements TextGenerationClient {
           messages: [{ role: 'user', content: prompt }],
         }),
       })
-    } catch (error) {
-      throw new TextGenerationRequestError('Text generation request failed', undefined, { cause: error })
+    } catch {
+      // Do not preserve the underlying error: fetch errors may include request URLs,
+      // headers, or credentials supplied by an adapter.
+      throw new TextGenerationRequestError('Text generation request failed')
     }
 
     if (!response.ok) {
@@ -76,8 +78,10 @@ export class OpenAICompatibleFetchClient implements TextGenerationClient {
     let payload: unknown
     try {
       payload = await response.json() as unknown
-    } catch (error) {
-      throw new TextGenerationRequestError('Text generation response was not valid JSON', response.status, { cause: error })
+    } catch {
+      // Response parsing failures can expose provider response details; keep the
+      // public error limited to a safe, stable message and status.
+      throw new TextGenerationRequestError('Text generation response was not valid JSON', response.status)
     }
     const content = readMessageContent(payload)
     if (content === undefined) {
@@ -102,7 +106,3 @@ const readMessageContent = (payload: unknown): string | undefined => {
 export function createOpenAICompatibleClient(options: OpenAICompatibleClientOptions): TextGenerationClient {
   return new OpenAICompatibleFetchClient(options)
 }
-
-export const createOpenAICompatibleFetchAdapter = createOpenAICompatibleClient
-export const createOpenAICompatibleFetchClient = createOpenAICompatibleClient
-export { OpenAICompatibleFetchClient as OpenAICompatibleFetchAdapter }

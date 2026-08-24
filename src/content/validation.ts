@@ -130,6 +130,3 @@ export function validateCycleContent(content: unknown, spec: GenerationSpec): Cy
 
   return { article, questions }
 }
-
-export const validateGeneratedContent = validateCycleContent
-export const targetWordOccursIn = containsNormalizedWord

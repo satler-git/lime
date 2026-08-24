@@ -1,6 +1,6 @@
 export class ContentParseError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
+  constructor(message: string) {
+    super(message)
     this.name = 'ContentParseError'
   }
 }
@@ -14,11 +14,7 @@ export function parseGeneratedJson(text: string): unknown {
   if (json.length === 0) throw new ContentParseError('Generated output is empty')
   try {
     return JSON.parse(json) as unknown
-  } catch (error) {
-    throw new ContentParseError('Generated output is not valid JSON', { cause: error })
+  } catch {
+    throw new ContentParseError('Generated output is not valid JSON')
   }
 }
-
-export const parseContent = parseGeneratedJson
-export const parseCycleContent = parseGeneratedJson
-export const parseGeneratedContent = parseGeneratedJson

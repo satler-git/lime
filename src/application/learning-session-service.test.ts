@@ -4,6 +4,7 @@ import {
   LearningSessionService,
   SessionOrchestrationError,
   type BatchAddServicePort,
+  type ContentProvider,
 } from './learning-session-service'
 import { BatchAddService, BatchSelectionError } from '../batch-add'
 import { createCard, type Card } from '../domain/card'
@@ -12,7 +13,11 @@ import { InMemoryReadingSessionRepository } from '../session'
 import { InMemoryQuizStateRepository } from '../quiz'
 import { FsrsScheduler } from '../scheduling/fsrs-scheduler'
 import type { CardRepository } from '../repositories/card-repository'
-import type { CycleContent } from '../content'
+import {
+  CycleContentProvider,
+  createGenerationSpecFactory,
+  type CycleContent,
+} from '../content'
 import type { QuizQuestion, QuizState, QuizStateRepository } from '../quiz'
 import type { ReadingSession } from '../session'
 import type { ReadingSessionRepository } from '../session/repository'
@@ -103,6 +108,7 @@ const makeApplication = (
     sessionRepository?: ReadingSessionRepository
     quizStateRepository?: QuizStateRepository
     batchAddService?: BatchAddServicePort
+    contentProvider?: ContentProvider
   } = {},
 ) => {
   const cardRepository = new InMemoryCards()
@@ -130,7 +136,7 @@ const makeApplication = (
     },
     quizService: undefined,
     batchAddService: repositories.batchAddService,
-    contentProvider: {
+    contentProvider: repositories.contentProvider ?? {
       async getContent(): Promise<CycleContent> {
         return content
       },
@@ -476,6 +482,31 @@ describe('LearningSessionService', () => {
 
     await second.answerQuestion(session.id, 'question-1', 'correct')
     expect((await first.app.getQuizState(session.id)).answers).toHaveLength(2)
+  })
+
+  it('transitions to quiz through CycleContentProvider when content is omitted', async () => {
+    const generated = { article: 'A resilient article.', questions: makeQuestions() }
+    const client = {
+      generate: vi.fn(async () => JSON.stringify(generated)),
+    }
+    const provider = new CycleContentProvider(
+      client,
+      createGenerationSpecFactory({
+        themeSelector: () => 'Public spaces',
+        style: 'factual prose',
+        articleWordTarget: 240,
+      }),
+      { cacheNamespace: 'application-test' },
+    )
+    const { app, cardService, quizStateRepository } = makeApplication(false, { contentProvider: provider })
+    const card = await cardService.create({ id: 'provider-port', word: 'resilient', now: time })
+    const session = await app.startCycle([card])
+
+    const transitioned = await app.transitionToQuiz(session.id)
+    expect(transitioned.session.status).toBe('quiz')
+    expect(transitioned.quiz.questions).toEqual(generated.questions)
+    await expect(quizStateRepository.load(session.id)).resolves.toEqual(transitioned.quiz)
+    expect(client.generate).toHaveBeenCalledTimes(1)
   })
 
   it('resolves ID-only cycles with a loader and rejects them without one', async () => {

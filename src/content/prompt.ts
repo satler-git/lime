@@ -31,5 +31,3 @@ export function buildGenerationPrompt(spec: GenerationSpec): string {
     'Each question must have exactly four different options, exactly one correctOptionId that matches an option id, and a non-empty relatedWords array.',
   ].join('\n')
 }
-
-export const buildPrompt = buildGenerationPrompt
