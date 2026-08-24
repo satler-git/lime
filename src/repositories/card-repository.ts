@@ -1,7 +1,12 @@
 import type { Card, CardId } from '../domain/card'
 
+/** Narrow read-only port used when a session only needs to rehydrate cards. */
+export interface CardLoader {
+  load(id: CardId): Promise<Card | null>
+}
+
 /** Storage port; implementations may use IndexedDB, D1, or another database. */
-export interface CardRepository {
+export interface CardRepository extends CardLoader {
   save(card: Card): Promise<void>
   load(id: CardId): Promise<Card | null>
   loadAll(): Promise<Card[]>

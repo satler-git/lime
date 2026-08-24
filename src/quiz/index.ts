@@ -1,2 +1,5 @@
 export * from './types'
 export * from './quiz-service'
+export * from './repository'
+export * from './in-memory-quiz-state-repository'
+export * from '../persistence/indexed-db-quiz-state-repository'

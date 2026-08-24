@@ -78,12 +78,36 @@ const assertDate = (date: Date, name: string): void => {
   }
 }
 
-const assertPosition = (position: TextPosition): void => {
-  if (!Number.isInteger(position.paragraph) || position.paragraph < 0) {
+const assertPosition: (position: unknown) => asserts position is TextPosition = (position) => {
+  if (position === null || typeof position !== 'object') {
+    throw new InvalidLookupError('position must be an object')
+  }
+  const candidate = position as TextPosition
+  if (!Number.isInteger(candidate.paragraph) || candidate.paragraph < 0) {
     throw new InvalidLookupError('position.paragraph must be a non-negative integer')
   }
-  if (!Number.isInteger(position.character) || position.character < 0) {
+  if (!Number.isInteger(candidate.character) || candidate.character < 0) {
     throw new InvalidLookupError('position.character must be a non-negative integer')
+  }
+}
+
+/** Validate lookup input without performing any provider or persistence work. */
+export function validateLookupInput(input: RecordLookupInput): void {
+  if (input === null || typeof input !== 'object') {
+    throw new InvalidLookupError('Lookup input must be an object')
+  }
+  if (typeof input.word !== 'string' || input.word.trim().length === 0) {
+    throw new InvalidLookupError('A lookup word is required')
+  }
+  if (input.source !== 'article' && input.source !== 'example') {
+    throw new InvalidLookupError('Lookup source must be article or example')
+  }
+  assertPosition(input.position)
+  if (typeof input.inSrs !== 'boolean') {
+    throw new InvalidLookupError('inSrs must be a boolean')
+  }
+  if (input.timestamp !== undefined) {
+    assertDate(input.timestamp, 'lookup timestamp')
   }
 }
 
@@ -172,17 +196,8 @@ export class ReadingSessionService {
 
   recordLookup(session: ReadingSession, input: RecordLookupInput): ReadingSession {
     assertReading(session)
+    validateLookupInput(input)
     const word = input.word.trim()
-    if (word.length === 0) {
-      throw new InvalidLookupError('A lookup word is required')
-    }
-    if (input.source !== 'article' && input.source !== 'example') {
-      throw new InvalidLookupError('Lookup source must be article or example')
-    }
-    assertPosition(input.position)
-    if (typeof input.inSrs !== 'boolean') {
-      throw new InvalidLookupError('inSrs must be a boolean')
-    }
     const timestamp = copyDate(input.timestamp ?? this.clock())
     assertDate(timestamp, 'lookup timestamp')
 

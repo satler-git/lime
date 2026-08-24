@@ -103,7 +103,7 @@ const copyAnswer = (answer: QuizAnswer): QuizAnswer => ({
   answeredAt: copyDate(answer.answeredAt),
 })
 
-const copyState = (state: QuizState): QuizState => ({
+export const cloneQuizState = (state: QuizState): QuizState => ({
   ...state,
   questions: state.questions.map((question) => ({
     ...question,
@@ -172,7 +172,7 @@ export function answerQuestion(
   }
   const nextIndex = state.currentQuestionIndex + 1
   const completed = nextIndex === state.questions.length
-  const snapshot = copyState(state)
+  const snapshot = cloneQuizState(state)
 
   return {
     ...snapshot,

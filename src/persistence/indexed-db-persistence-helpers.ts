@@ -1,6 +1,7 @@
 import type { Card } from '../domain/card'
 import type { ReviewAction } from '../review/types'
 import type { LookupEvent, ReadingSession } from '../session/types'
+import type { QuizAnswer, QuizQuestion, QuizState } from '../quiz/types'
 
 export type PersistedCard = Omit<Card, 'createdAt' | 'due' | 'lastReview'> & {
   createdAt: string
@@ -25,6 +26,20 @@ export type PersistedReadingSession = Omit<ReadingSession, 'createdAt' | 'starte
   completedAt: string | null
   abandonedAt: string | null
   lookupEvents: PersistedLookupEvent[]
+}
+
+export type PersistedQuizQuestion = Omit<QuizQuestion, 'options' | 'relatedWords'> & {
+  options: Array<{ id: string; text: string }>
+  relatedWords: string[]
+}
+
+export type PersistedQuizAnswer = Omit<QuizAnswer, 'answeredAt'> & { answeredAt: string }
+
+export type PersistedQuizState = Omit<QuizState, 'questions' | 'answers' | 'startedAt' | 'completedAt'> & {
+  questions: PersistedQuizQuestion[]
+  answers: PersistedQuizAnswer[]
+  startedAt: string
+  completedAt: string | null
 }
 
 /** Convert dates to strings before IndexedDB sees a value, rejecting invalid dates. */
@@ -127,6 +142,41 @@ export const deserializeReadingSession = (session: PersistedReadingSession): Rea
       position: { ...event.position },
       timestamp: deserializeDate(event.timestamp, `lookup event ${event.id} timestamp`),
     })),
+  }
+}
+
+export const serializeQuizState = (state: QuizState): PersistedQuizState => ({
+  ...state,
+  questions: state.questions.map((question) => ({
+    ...question,
+    options: question.options.map((option) => ({ ...option })),
+    relatedWords: [...question.relatedWords],
+  })),
+  answers: state.answers.map((answer) => ({
+    ...answer,
+    answeredAt: serializeDate(answer.answeredAt, `quiz answer ${answer.questionId} answeredAt`),
+  })),
+  startedAt: serializeDate(state.startedAt, 'quiz startedAt'),
+  completedAt: state.completedAt === undefined ? null : serializeDate(state.completedAt, 'quiz completedAt'),
+})
+
+export const deserializeQuizState = (state: PersistedQuizState): QuizState => {
+  const { questions, answers, startedAt, completedAt, ...values } = state
+  return {
+    ...values,
+    questions: questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({ ...option })),
+      relatedWords: [...question.relatedWords],
+    })),
+    answers: answers.map((answer) => ({
+      ...answer,
+      answeredAt: deserializeDate(answer.answeredAt, `quiz answer ${answer.questionId} answeredAt`),
+    })),
+    startedAt: deserializeDate(startedAt, 'quiz startedAt'),
+    ...(completedAt === null || completedAt === undefined
+      ? {}
+      : { completedAt: deserializeDate(completedAt, 'quiz completedAt') }),
   }
 }
 
