@@ -12,13 +12,19 @@ export type BatchCandidate = {
 export type BatchCandidateSource = readonly UnregisteredLookup[] | ReadingSession
 
 export type BatchSelectionState = {
+  /** The reading session from which this selection was created. */
+  sessionId: string
+  /** A deterministic snapshot of the candidate order, spelling, and counts. */
+  candidateFingerprint: string
   candidates: readonly BatchCandidate[]
   selectedWords: readonly string[]
 }
 
-/** A deliberately small port implemented by CardService and test doubles. */
+/** Card creation and lookup operations required by the batch-add boundary. */
 export interface CardCreator {
   create(input: NewCard): Promise<Card>
+  findByWord(word: string): Promise<Card | null>
+  createIfAbsent(input: NewCard): Promise<Card>
 }
 
 export type BatchAddResult = {

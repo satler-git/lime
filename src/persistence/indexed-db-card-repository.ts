@@ -1,4 +1,5 @@
-import type { Card, CardId, CardState } from '../domain/card'
+import { createCard, type Card, type CardId, type CardState, type NewCard } from '../domain/card'
+import { normalizeWord } from '../domain/word'
 import type { CardRepository } from '../repositories/card-repository'
 import {
   namespaceDatabaseName,
@@ -94,6 +95,41 @@ export class IndexedDbCardRepository implements CardRepository {
     const transaction = database.transaction(this.storeName, 'readwrite')
     transaction.objectStore(this.storeName).put(serialize(card))
     await transactionDone(transaction)
+  }
+
+  /**
+   * Find or insert a card in one readwrite transaction. Keeping the scan and
+   * add in the same transaction lets IndexedDB serialize competing tabs that
+   * are adding the same normalized word.
+   */
+  async createIfAbsent(input: NewCard): Promise<Card> {
+    const normalizedWord = normalizeWord(input.word)
+    if (normalizedWord.length === 0) {
+      throw new Error('A card word is required')
+    }
+
+    const database = await this.open()
+    const transaction = database.transaction(this.storeName, 'readwrite')
+    const store = transaction.objectStore(this.storeName)
+    const completion = transactionDone(transaction)
+
+    try {
+      const records = await requestResult<PersistedCard[]>(store.getAll())
+      const existing = records.find((record) => normalizeWord(record.word) === normalizedWord)
+      if (existing !== undefined) {
+        await completion
+        return deserialize(existing)
+      }
+
+      const card = createCard(input)
+      store.add(serialize(card))
+      await completion
+      return card
+    } catch (error) {
+      // Consume a possible transaction rejection when a request fails first.
+      await completion.catch(() => undefined)
+      throw error
+    }
   }
 
   async load(id: CardId): Promise<Card | null> {

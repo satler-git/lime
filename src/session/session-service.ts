@@ -1,4 +1,5 @@
 import type { CardId } from '../domain/card'
+import { normalizeWord } from '../domain/word'
 import {
   type LookupEvent,
   type ReadingSession,
@@ -111,13 +112,6 @@ export function validateLookupInput(input: RecordLookupInput): void {
   }
 }
 
-const normalizeApostrophes = (word: string): string => word.replace(/[\u2018\u2019\u201B\u2032\uFF07]/g, "'")
-
-/** Normalize case, Unicode compatibility forms, whitespace, and apostrophe style. */
-export function normalizeLookupWord(word: string): string {
-  return normalizeApostrophes(word.normalize('NFKC')).trim().toLocaleLowerCase('en-US').replace(/\s+/g, ' ')
-}
-
 const cardIdsFromCycle = (cycle: SessionCycle): CardId[] => cycle.map((item) => typeof item === 'string' ? item : item.id)
 
 const assertCanTransition = (session: ReadingSession, expected: SessionStatus, next: SessionStatus): void => {
@@ -158,10 +152,6 @@ export class ReadingSessionService {
       createdAt,
       lookupEvents: [],
     }
-  }
-
-  createSession(cycle: SessionCycle): ReadingSession {
-    return this.createSnapshot(cycle)
   }
 
   startReading(session: ReadingSession, at = this.clock()): ReadingSession {
@@ -213,16 +203,12 @@ export class ReadingSessionService {
     return { ...snapshot, lookupEvents: [...snapshot.lookupEvents, event] }
   }
 
-  recordDictionaryLookup(session: ReadingSession, input: RecordLookupInput): ReadingSession {
-    return this.recordLookup(session, input)
-  }
-
   /** Return one candidate per normalized unregistered word, in first-seen order. */
   getUnregisteredLookups(session: ReadingSession): UnregisteredLookup[] {
     const candidates = new Map<string, UnregisteredLookup>()
     for (const event of session.lookupEvents) {
       if (event.inSrs) continue
-      const normalizedWord = normalizeLookupWord(event.word)
+      const normalizedWord = normalizeWord(event.word)
       if (normalizedWord.length === 0) continue
       const existing = candidates.get(normalizedWord)
       if (existing === undefined) {
@@ -233,48 +219,4 @@ export class ReadingSessionService {
     }
     return [...candidates.values()]
   }
-
-  getUnregisteredWordCandidates(session: ReadingSession): UnregisteredLookup[] {
-    return this.getUnregisteredLookups(session)
-  }
 }
-
-export function createSessionSnapshot(cycle: SessionCycle, options?: ReadingSessionServiceOptions): ReadingSession {
-  return new ReadingSessionService(options).createSnapshot(cycle)
-}
-
-export const createReadingSession = createSessionSnapshot
-
-export function startReading(session: ReadingSession, at?: Date): ReadingSession {
-  const transitionTime = at ?? new Date()
-  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).startReading(session, transitionTime)
-}
-
-export function transitionToQuiz(session: ReadingSession, at?: Date): ReadingSession {
-  const transitionTime = at ?? new Date()
-  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).transitionToQuiz(session, transitionTime)
-}
-
-export function completeReadingSession(session: ReadingSession, at?: Date): ReadingSession {
-  const transitionTime = at ?? new Date()
-  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).complete(session, transitionTime)
-}
-
-export const completeSession = completeReadingSession
-
-export function abandonReadingSession(session: ReadingSession, at?: Date): ReadingSession {
-  const transitionTime = at ?? new Date()
-  return new ReadingSessionService({ clock: () => copyDate(transitionTime) }).abandon(session, transitionTime)
-}
-
-export const abandonSession = abandonReadingSession
-
-export function recordDictionaryLookup(session: ReadingSession, input: RecordLookupInput, options?: ReadingSessionServiceOptions): ReadingSession {
-  return new ReadingSessionService(options).recordLookup(session, input)
-}
-
-export function getUnregisteredLookups(session: ReadingSession): UnregisteredLookup[] {
-  return new ReadingSessionService().getUnregisteredLookups(session)
-}
-
-export const getUnregisteredWordCandidates = getUnregisteredLookups

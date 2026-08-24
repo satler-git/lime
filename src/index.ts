@@ -1,5 +1,6 @@
 export * from './application'
 export * from './domain/card'
+export * from './domain/word'
 export * from './persistence/indexed-db-card-repository'
 export * from './persistence/indexed-db-reading-session-repository'
 export * from './persistence/indexed-db-review-action-repository'

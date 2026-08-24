@@ -1,4 +1,4 @@
-import type { Card, CardId } from '../domain/card'
+import type { Card, CardId, NewCard } from '../domain/card'
 
 /** Narrow read-only port used when a session only needs to rehydrate cards. */
 export interface CardLoader {
@@ -12,4 +12,6 @@ export interface CardRepository extends CardLoader {
   loadAll(): Promise<Card[]>
   getDue(now: Date): Promise<Card[]>
   restore(card: Card): Promise<void>
+  /** Optional atomic lookup-and-create operation for adapters that support it. */
+  createIfAbsent?: (input: NewCard) => Promise<Card>
 }

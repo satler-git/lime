@@ -1,5 +1,6 @@
 import type { ReadingSession, UnregisteredLookup } from '../session/types'
 import type { Card, NewCard } from '../domain/card'
+import { normalizeWord } from '../domain/word'
 import type {
   BatchCandidate,
   BatchCandidateSource,
@@ -28,18 +29,11 @@ export class EmptyBatchSelectionError extends Error {
   }
 }
 
-const normalizeApostrophes = (word: string): string => word.replace(/[\u2018\u2019\u201B\u2032\uFF07]/g, "'")
-
-/** Shared matching rule for both supplied candidates and session events. */
-export function normalizeBatchWord(word: string): string {
-  return normalizeApostrophes(word.normalize('NFKC')).trim().toLocaleLowerCase('en-US').replace(/\s+/g, ' ')
-}
-
 const candidateFromWord = (word: string, lookupCount: number): BatchCandidate | undefined => {
   if (typeof word !== 'string') {
     throw new BatchCandidateError('Candidate word must be a string')
   }
-  const normalizedWord = normalizeBatchWord(word)
+  const normalizedWord = normalizeWord(word)
   if (normalizedWord.length === 0) return undefined
   if (!Number.isInteger(lookupCount) || lookupCount < 1) {
     throw new BatchCandidateError(`Lookup count must be a positive integer for ${word}`)
@@ -89,25 +83,136 @@ export function deriveBatchCandidates(source: BatchCandidateSource): BatchCandid
   return isReadingSession(source) ? candidatesFromSession(source) : candidatesFromLookups(source)
 }
 
-export const getBatchCandidates = deriveBatchCandidates
-export const deriveCandidates = deriveBatchCandidates
-
 const copyCandidate = (candidate: BatchCandidate): BatchCandidate => ({ ...candidate })
 
-/** Start an immutable selection over a candidate list. */
-export function createBatchSelection(candidates: readonly BatchCandidate[]): BatchSelectionState {
-  const normalizedCandidates = deriveBatchCandidates(candidates.map((candidate) => ({
+/** Validate the canonical shape used by selection snapshots. */
+const assertCandidatePayload: (candidate: unknown) => asserts candidate is BatchCandidate = (candidate) => {
+  if (candidate === null || typeof candidate !== 'object') {
+    throw new BatchSelectionError('Batch candidate must be an object')
+  }
+  const value = candidate as BatchCandidate
+  if (typeof value.word !== 'string' || normalizeWord(value.word).length === 0) {
+    throw new BatchSelectionError('Batch candidate word must be nonempty')
+  }
+  if (value.word !== value.word.trim()) {
+    throw new BatchSelectionError('Batch candidate word must be trimmed')
+  }
+  if (typeof value.normalizedWord !== 'string' || value.normalizedWord !== normalizeWord(value.word)) {
+    throw new BatchSelectionError('Batch candidate normalizedWord must match its word')
+  }
+  if (!Number.isInteger(value.lookupCount) || value.lookupCount < 1) {
+    throw new BatchSelectionError('Batch candidate lookupCount must be a positive integer')
+  }
+}
+
+const assertCandidatePayloads = (candidates: readonly BatchCandidate[]): void => {
+  if (!Array.isArray(candidates)) {
+    throw new BatchSelectionError('Batch candidates must be an array')
+  }
+  const normalizedWords = new Set<string>()
+  for (const candidate of candidates) {
+    assertCandidatePayload(candidate)
+    if (normalizedWords.has(candidate.normalizedWord)) {
+      throw new BatchSelectionError('Batch candidates must have unique normalized words')
+    }
+    normalizedWords.add(candidate.normalizedWord)
+  }
+}
+
+/**
+ * Return a stable representation of a candidate list. The first-seen spelling,
+ * normalized word, count, and order are all part of the snapshot so changes to
+ * what the learner saw cannot be applied through an older selection.
+ */
+export function getBatchCandidateFingerprint(candidates: readonly BatchCandidate[]): string {
+  return JSON.stringify(candidates.map((candidate) => ({
     word: candidate.word,
+    normalizedWord: candidate.normalizedWord,
     lookupCount: candidate.lookupCount,
   })))
-  return { candidates: normalizedCandidates, selectedWords: [] }
+}
+
+/** Validate the selection's own snapshot and normalized selected-word values. */
+function assertSelectionIntegrity(state: BatchSelectionState): void {
+  if (state === null || typeof state !== 'object') {
+    throw new BatchSelectionError('Batch selection must be an object')
+  }
+  if (typeof state.sessionId !== 'string' || state.sessionId.length === 0) {
+    throw new BatchSelectionError('Batch selection sessionId is required')
+  }
+  if (typeof state.candidateFingerprint !== 'string') {
+    throw new BatchSelectionError('Batch selection candidateFingerprint is required')
+  }
+  if (!Array.isArray(state.candidates) || !Array.isArray(state.selectedWords)) {
+    throw new BatchSelectionError('Batch selection has an invalid payload')
+  }
+  assertCandidatePayloads(state.candidates)
+  if (getBatchCandidateFingerprint(state.candidates) !== state.candidateFingerprint) {
+    throw new BatchSelectionError('Batch selection is invalid because its candidate payload changed')
+  }
+
+  const candidateWords = new Set(state.candidates.map((candidate) => candidate.normalizedWord))
+  const selectedWords = new Set<string>()
+  for (const selectedWord of state.selectedWords) {
+    if (
+      typeof selectedWord !== 'string'
+      || normalizeWord(selectedWord) !== selectedWord
+      || !candidateWords.has(selectedWord)
+    ) {
+      throw new BatchSelectionError(`Selected word is not a normalized candidate: ${String(selectedWord)}`)
+    }
+    if (selectedWords.has(selectedWord)) {
+      throw new BatchSelectionError(`Selected word is duplicated: ${selectedWord}`)
+    }
+    selectedWords.add(selectedWord)
+  }
+}
+
+/** Start a session-bound selection over a candidate list. */
+export function createBatchSelection(
+  sessionId: string,
+  candidates: readonly BatchCandidate[],
+): BatchSelectionState {
+  if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+    throw new BatchSelectionError('A sessionId is required')
+  }
+  // The factory is intentionally strict: derivation is the only operation
+  // that normalizes, trims, or merges raw lookup records.
+  assertCandidatePayloads(candidates)
+  const preservedCandidates = candidates.map(copyCandidate)
+  return {
+    sessionId,
+    candidateFingerprint: getBatchCandidateFingerprint(preservedCandidates),
+    candidates: preservedCandidates,
+    selectedWords: [],
+  }
+}
+
+/** Reject a selection that was made for another session or candidate snapshot. */
+export function assertBatchSelectionMatches(
+  selection: BatchSelectionState,
+  sessionId: string,
+  currentCandidates: readonly BatchCandidate[],
+): void {
+  assertSelectionIntegrity(selection)
+  if (selection.sessionId !== sessionId) {
+    throw new BatchSelectionError(
+      `Batch selection belongs to session ${selection.sessionId}, not ${sessionId}`,
+    )
+  }
+  assertCandidatePayloads(currentCandidates)
+  const currentFingerprint = getBatchCandidateFingerprint(currentCandidates)
+  if (selection.candidateFingerprint !== currentFingerprint) {
+    throw new BatchSelectionError('Batch selection is stale because its candidate snapshot has changed')
+  }
 }
 
 const assertCandidate = (state: BatchSelectionState, word: string): string => {
+  assertSelectionIntegrity(state)
   if (typeof word !== 'string') {
     throw new BatchSelectionError('A word is required')
   }
-  const normalizedWord = normalizeBatchWord(word)
+  const normalizedWord = normalizeWord(word)
   if (!state.candidates.some((candidate) => candidate.normalizedWord === normalizedWord)) {
     throw new BatchSelectionError(`Candidate not found: ${word}`)
   }
@@ -115,6 +220,8 @@ const assertCandidate = (state: BatchSelectionState, word: string): string => {
 }
 
 const copySelection = (state: BatchSelectionState): BatchSelectionState => ({
+  sessionId: state.sessionId,
+  candidateFingerprint: state.candidateFingerprint,
   candidates: state.candidates.map(copyCandidate),
   selectedWords: [...state.selectedWords],
 })
@@ -127,8 +234,6 @@ export function toggleBatchSelection(state: BatchSelectionState, word: string): 
   else selected.add(normalizedWord)
   return { ...copySelection(state), selectedWords: [...selected] }
 }
-
-export const toggleSelection = toggleBatchSelection
 
 export function selectBatchWord(state: BatchSelectionState, word: string): BatchSelectionState {
   const normalizedWord = assertCandidate(state, word)
@@ -145,17 +250,23 @@ export function deselectBatchWord(state: BatchSelectionState, word: string): Bat
 }
 
 export function getSelectedBatchCandidates(state: BatchSelectionState): BatchCandidate[] {
+  assertSelectionIntegrity(state)
   const selected = new Set(state.selectedWords)
   return state.candidates.filter((candidate) => selected.has(candidate.normalizedWord)).map(copyCandidate)
 }
-
-export const getSelectedCandidates = getSelectedBatchCandidates
 
 export type BatchAddOptions = {
   clock?: () => Date
 }
 
-/** Create one card for each selected normalized word, in candidate order. */
+/**
+ * Return one card for each selected normalized word, in candidate order.
+ *
+ * Creation uses the creator's required atomic `createIfAbsent` operation, so
+ * retries reuse earlier successes. Creation is sequential: a failure leaves
+ * earlier cards committed and later candidates unattempted. Adapters without
+ * native atomic storage must provide that operation through their own fallback.
+ */
 export async function addSelectedWords(
   state: BatchSelectionState,
   creator: CardCreator,
@@ -168,13 +279,11 @@ export async function addSelectedWords(
   for (const candidate of selectedCandidates) {
     const input: NewCard = { word: candidate.word }
     if (options.clock !== undefined) input.now = options.clock()
-    cards.push(await creator.create(input))
+
+    cards.push(await creator.createIfAbsent(input))
   }
   return cards
 }
-
-export const createSelectedCards = addSelectedWords
-export const addSelectedCandidates = addSelectedWords
 
 /** Injectable facade for application callers. */
 export class BatchAddService {
@@ -188,8 +297,8 @@ export class BatchAddService {
     return deriveBatchCandidates(source)
   }
 
-  createSelection(candidates: readonly BatchCandidate[]): BatchSelectionState {
-    return createBatchSelection(candidates)
+  createSelection(sessionId: string, candidates: readonly BatchCandidate[]): BatchSelectionState {
+    return createBatchSelection(sessionId, candidates)
   }
 
   toggle(state: BatchSelectionState, word: string): BatchSelectionState {

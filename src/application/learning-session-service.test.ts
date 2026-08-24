@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CardService } from './card-service'
-import { LearningSessionService, SessionOrchestrationError } from './learning-session-service'
+import {
+  LearningSessionService,
+  SessionOrchestrationError,
+  type BatchAddServicePort,
+} from './learning-session-service'
+import { BatchAddService, BatchSelectionError } from '../batch-add'
 import { createCard, type Card } from '../domain/card'
 import { InMemoryReviewActionRepository, ReviewService } from '../review'
 import { InMemoryReadingSessionRepository } from '../session'
@@ -97,12 +102,14 @@ const makeApplication = (
   repositories: {
     sessionRepository?: ReadingSessionRepository
     quizStateRepository?: QuizStateRepository
+    batchAddService?: BatchAddServicePort
   } = {},
 ) => {
   const cardRepository = new InMemoryCards()
   const cardService = new CardService(cardRepository, new FsrsScheduler())
   const sessionRepository = repositories.sessionRepository ?? new InMemoryReadingSessionRepository()
   const quizStateRepository = repositories.quizStateRepository ?? new InMemoryQuizStateRepository()
+  let sessionNumber = 0
   const reviewService = new ReviewService({
     cardService,
     actionRepository: new InMemoryReviewActionRepository(),
@@ -117,8 +124,12 @@ const makeApplication = (
     cardCreator: cardService,
     cardLoader: withLoader ? cardRepository : undefined,
     quizStateRepository,
-    sessionServiceOptions: { clock: () => time, idFactory: (kind = 'id') => `${kind}-1` },
+    sessionServiceOptions: {
+      clock: () => time,
+      idFactory: (kind = 'id') => kind === 'session' ? `session-${++sessionNumber}` : `${kind}-1`,
+    },
     quizService: undefined,
+    batchAddService: repositories.batchAddService,
     contentProvider: {
       async getContent(): Promise<CycleContent> {
         return content
@@ -316,10 +327,130 @@ describe('LearningSessionService', () => {
     expect(candidates).toMatchObject([{ word: 'Learn', normalizedWord: 'learn', lookupCount: 2 }])
 
     let selection = await app.createBatchSelection(session.id)
+    expect(selection.sessionId).toBe(session.id)
+    expect(selection.candidateFingerprint).toBeTruthy()
     selection = app.toggleBatchSelection(selection, 'LEARN')
     const created = await app.addSelectedCandidates(session.id, selection)
     expect(created).toHaveLength(1)
     expect(created[0].word).toBe('Learn')
+
+    const repeated = await app.addSelectedCandidates(session.id, selection)
+    expect(repeated.map((card) => card.id)).toEqual(created.map((card) => card.id))
+    expect(await cardService.findByWord('learn')).toMatchObject({ id: created[0].id })
+  })
+
+  it('passes session metadata directly to injected batch services', async () => {
+    const delegate = new BatchAddService()
+    const createSelection = vi.fn((sessionId: Parameters<BatchAddServicePort['createSelection']>[0], candidates: Parameters<BatchAddServicePort['createSelection']>[1]) =>
+      delegate.createSelection(sessionId, candidates))
+    const batchAddService: BatchAddServicePort = {
+      candidates: (session) => delegate.candidates(session),
+      createSelection,
+      toggle: (state, word) => delegate.toggle(state, word),
+      add: (state, creator) => delegate.add(state, creator),
+    }
+    const { app, cardService } = makeApplication(false, { batchAddService })
+    const card = await cardService.create({ id: 'injected-batch-port', word: 'injected-batch-port', now: time })
+    const session = await app.startCycle([card])
+    await app.recordLookup(session.id, {
+      word: 'Learn', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+
+    const selection = await app.createBatchSelection(session.id)
+
+    expect(createSelection).toHaveBeenCalledWith(session.id, [
+      { word: 'Learn', normalizedWord: 'learn', lookupCount: 1 },
+    ])
+    expect(selection.sessionId).toBe(session.id)
+    expect(selection.candidateFingerprint).toBeTruthy()
+  })
+
+  it('preserves binding metadata through the injected batch service', async () => {
+    const delegate = new BatchAddService()
+    const batchAddService: BatchAddServicePort = {
+      candidates: (session) => delegate.candidates(session),
+      createSelection: (sessionId, candidates) => delegate.createSelection(sessionId, candidates),
+      toggle: (state, word) => delegate.toggle(state, word),
+      add: (state, creator) => delegate.add(state, creator),
+    }
+    const { app, cardService } = makeApplication(false, { batchAddService })
+    const card = await cardService.create({ id: 'injected-toggle', word: 'injected-toggle', now: time })
+    const first = await app.startCycle([card])
+    await app.recordLookup(first.id, {
+      word: 'First', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+
+    const original = await app.createBatchSelection(first.id)
+    const selection = app.toggleBatchSelection(original, 'FIRST')
+    expect(selection).toMatchObject({
+      sessionId: first.id,
+      candidateFingerprint: original.candidateFingerprint,
+      selectedWords: ['first'],
+    })
+    await expect(app.addSelectedCandidates(first.id, selection)).resolves.toHaveLength(1)
+
+    const second = await app.startCycle([card])
+    await expect(app.addSelectedCandidates(second.id, selection)).rejects.toThrowError('belongs to session')
+
+    await app.recordLookup(first.id, {
+      word: 'Second', source: 'article', position: { paragraph: 0, character: 1 }, inSrs: false,
+    })
+    await expect(app.addSelectedCandidates(first.id, selection)).rejects.toThrowError('selection is stale')
+  })
+
+  it('rejects a batch selection used with another reading session', async () => {
+    const { app, cardService } = makeApplication()
+    const card = await cardService.create({ id: 'cross-session', word: 'cross-session', now: time })
+    const first = await app.startCycle([card])
+    await app.recordLookup(first.id, {
+      word: 'First', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+    const selection = await app.createBatchSelection(first.id)
+
+    const second = await app.startCycle([card])
+    await expect(app.addSelectedCandidates(second.id, selection)).rejects.toThrowError('belongs to session')
+  })
+
+  it('rejects a batch selection after its session candidate snapshot changes', async () => {
+    const { app, cardService } = makeApplication()
+    const card = await cardService.create({ id: 'stale-selection', word: 'stale-selection', now: time })
+    const session = await app.startCycle([card])
+    await app.recordLookup(session.id, {
+      word: 'First', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+    const selection = await app.createBatchSelection(session.id)
+    await app.recordLookup(session.id, {
+      word: 'Second', source: 'article', position: { paragraph: 0, character: 1 }, inSrs: false,
+    })
+
+    await expect(app.addSelectedCandidates(session.id, selection)).rejects.toThrowError('selection is stale')
+  })
+
+  it('rejects a batch selection whose candidate payload is mutated before adding', async () => {
+    const { app, cardService } = makeApplication()
+    const card = await cardService.create({ id: 'mutated-selection', word: 'mutated-selection', now: time })
+    const session = await app.startCycle([card])
+    await app.recordLookup(session.id, {
+      word: 'First', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+    const selection = await app.createBatchSelection(session.id)
+    selection.selectedWords = ['first']
+    ;(selection.candidates as unknown as Array<{ word: string }>)[0].word = 'Changed'
+
+    await expect(app.addSelectedCandidates(session.id, selection)).rejects.toThrowError(BatchSelectionError)
+  })
+
+  it('rejects selected words that do not exactly match normalized candidates', async () => {
+    const { app, cardService } = makeApplication()
+    const card = await cardService.create({ id: 'invalid-selected-word', word: 'invalid-selected-word', now: time })
+    const session = await app.startCycle([card])
+    await app.recordLookup(session.id, {
+      word: 'First', source: 'article', position: { paragraph: 0, character: 0 }, inSrs: false,
+    })
+    const selection = await app.createBatchSelection(session.id)
+    selection.selectedWords = ['FIRST']
+
+    await expect(app.addSelectedCandidates(session.id, selection)).rejects.toThrowError('not a normalized candidate')
   })
 
   it('reloads quiz state in a new service and isolates quiz snapshots', async () => {

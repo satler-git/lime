@@ -104,6 +104,23 @@ describe('CardService', () => {
     expect(getDue).toHaveBeenCalledTimes(1)
     expect(getDue).toHaveBeenCalledWith(now)
   })
+
+  it('delegates createIfAbsent to a repository atomic capability', async () => {
+    const card = createCard({ id: 'atomic', word: 'Atomic', now: baseTime })
+    const createIfAbsent = vi.fn(async () => card)
+    const cardRepository: CardRepository = {
+      save: async () => {},
+      load: async () => null,
+      loadAll: async () => [],
+      getDue: async () => [],
+      restore: async () => {},
+      createIfAbsent,
+    }
+
+    const service = new CardService(cardRepository)
+    await expect(service.createIfAbsent({ word: 'atomic' })).resolves.toBe(card)
+    expect(createIfAbsent).toHaveBeenCalledWith({ word: 'atomic' })
+  })
 })
 
 describe('FSRS scheduling adapter', () => {
@@ -151,6 +168,19 @@ describe('IndexedDB card repository', () => {
 
     await expect(cardRepository.getDue(new Date('2025-01-01T00:00:00.000Z')))
       .resolves.toEqual([overdue, dueNow])
+  })
+
+  it('atomically reuses one card for concurrent normalized-word creates', async () => {
+    const cardRepository = makeRepository()
+
+    const [first, second] = await Promise.all([
+      cardRepository.createIfAbsent({ word: '  Don’t  ', now: baseTime }),
+      cardRepository.createIfAbsent({ word: "don't", now: new Date('2030-01-01T00:00:00.000Z') }),
+    ])
+
+    expect(first.id).toBe(second.id)
+    expect(first.word).toBe('  Don’t  ')
+    await expect(cardRepository.loadAll()).resolves.toHaveLength(1)
   })
 })
 

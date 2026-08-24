@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createCard } from '../domain/card'
+import { normalizeWord } from '../domain/word'
 import {
   InMemoryReadingSessionRepository,
   ReadingSessionService,
   SessionTransitionError,
-  createSessionSnapshot,
 } from './index'
 
 const initialTime = new Date('2025-01-01T00:00:00.000Z')
@@ -126,6 +126,12 @@ describe('dictionary lookup events', () => {
     expect(service.recordLookup(reading, input).lookupEvents).toHaveLength(1)
   })
 
+  it('normalizes prime punctuation through the shared rule', () => {
+    for (const punctuation of ['\u2033', '\u2034', '\u2057']) {
+      expect(normalizeWord(`Don${punctuation}t`)).toBe("don't")
+    }
+  })
+
   it('returns unique unregistered candidates with case and apostrophe normalization', () => {
     const service = makeService()
     let session = service.startReading(service.createSnapshot(['card-a']), readingTime)
@@ -151,10 +157,10 @@ describe('dictionary lookup events', () => {
 describe('InMemoryReadingSessionRepository', () => {
   it('isolates stored snapshots from callers', async () => {
     const repository = new InMemoryReadingSessionRepository()
-    const session = createSessionSnapshot(['card-a'], {
+    const session = new ReadingSessionService({
       clock: () => initialTime,
       idFactory: () => 'session-fixed',
-    })
+    }).createSnapshot(['card-a'])
 
     await repository.save(session)
     const loaded = await repository.load(session.id)

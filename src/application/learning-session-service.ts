@@ -1,6 +1,9 @@
 import type { Card, CardId, Rating } from '../domain/card'
 import type { CycleContent } from '../content/types'
-import { BatchAddService } from '../batch-add/batch-add-service'
+import {
+  assertBatchSelectionMatches,
+  BatchAddService,
+} from '../batch-add/batch-add-service'
 import type {
   BatchCandidate,
   BatchSelectionState,
@@ -65,49 +68,27 @@ export interface QuizServicePort {
 /** The batch-add operations needed by this application boundary. */
 export interface BatchAddServicePort {
   candidates(source: ReadingSession): BatchCandidate[]
-  createSelection(candidates: readonly BatchCandidate[]): BatchSelectionState
+  createSelection(sessionId: string, candidates: readonly BatchCandidate[]): BatchSelectionState
   toggle(state: BatchSelectionState, word: string): BatchSelectionState
   add(state: BatchSelectionState, creator: CardCreator): Promise<Card[]>
 }
 
 /** Describes all application collaborators. Domain services remain injectable. */
-type LearningSessionServiceOptionsBase = {
-  readingSessionRepository?: ReadingSessionRepository
-  /** Short alias for callers that name the port after the aggregate. */
-  sessionRepository?: ReadingSessionRepository
+export type LearningSessionServiceOptions = {
+  readingSessionRepository: ReadingSessionRepository
   reviewService: ReviewServicePort
-  cardService?: CardCreator
   cardCreator?: CardCreator
   readingSessionService?: ReadingSessionServicePort
   quizService?: QuizServicePort
   batchAddService?: BatchAddServicePort
   cardLoader?: CardLoader
-  /** Alias for a repository that also provides card loading. */
-  cardRepository?: CardLoader
   todayPlan?: TodayPlan
-  plan?: TodayPlan
   contentProvider?: ContentProvider
-  /** Alias useful when an adapter is named after the operation it provides. */
-  contentService?: ContentProvider
   dictionaryLookup?: DictionaryLookup
-  /** Alias useful when an adapter is named as a service. */
-  dictionaryService?: DictionaryLookup
   sessionServiceOptions?: ReadingSessionServiceOptions
+  /** A quiz-state repository must be explicitly supplied to the application boundary. */
+  quizStateRepository: QuizStateRepository
 }
-
-/** A quiz-state repository must be explicitly supplied to the application boundary. */
-export type LearningSessionServiceOptions = LearningSessionServiceOptionsBase & (
-  | {
-      quizStateRepository: QuizStateRepository
-      /** Alias for callers that name the port after the quiz aggregate. */
-      quizRepository?: QuizStateRepository
-    }
-  | {
-      quizStateRepository?: QuizStateRepository
-      /** Alias for callers that name the port after the quiz aggregate. */
-      quizRepository: QuizStateRepository
-    }
-)
 
 export type QuizSessionSnapshot = {
   session: ReadingSession
@@ -162,25 +143,17 @@ export class LearningSessionService {
   private readonly sessionMutations = new Map<string, Promise<unknown>>()
 
   constructor(options: LearningSessionServiceOptions) {
-    const repository = options.readingSessionRepository ?? options.sessionRepository
-    if (repository === undefined) {
-      throw new SessionOrchestrationError('A ReadingSessionRepository is required')
-    }
-    this.sessions = repository
+    this.sessions = options.readingSessionRepository
     this.readingSessions = options.readingSessionService ?? new ReadingSessionService(options.sessionServiceOptions)
     this.reviews = options.reviewService
     this.quizzes = options.quizService ?? new QuizService()
-    const quizStateRepository = options.quizStateRepository ?? options.quizRepository
-    if (quizStateRepository === undefined) {
-      throw new SessionOrchestrationError('A QuizStateRepository is required')
-    }
-    this.quizStateRepository = quizStateRepository
+    this.quizStateRepository = options.quizStateRepository
     this.batchAdds = options.batchAddService ?? new BatchAddService()
-    this.creator = options.cardCreator ?? options.cardService
-    this.cardLoader = options.cardLoader ?? options.cardRepository
-    this.content = options.contentProvider ?? options.contentService
-    this.dictionary = options.dictionaryLookup ?? options.dictionaryService
-    this.plannedCycle = options.todayPlan ?? options.plan
+    this.creator = options.cardCreator
+    this.cardLoader = options.cardLoader
+    this.content = options.contentProvider
+    this.dictionary = options.dictionaryLookup
+    this.plannedCycle = options.todayPlan
   }
 
   /** Persist a created snapshot, then persist its transition into reading. */
@@ -214,23 +187,10 @@ export class LearningSessionService {
     return this.startCycle(plan.cycles[cycleIndex])
   }
 
-  /** Short alias for callers that already hold a TodayPlan. */
-  start(plan: TodayPlan, cycleIndex?: number): Promise<ReadingSession>
-  start(cycle: SessionCycle): Promise<ReadingSession>
-  start(planOrCycle: TodayPlan | SessionCycle, cycleIndex = 0): Promise<ReadingSession> {
-    return this.isTodayPlan(planOrCycle)
-      ? this.startPlannedCycle(planOrCycle, cycleIndex)
-      : this.startCycle(planOrCycle)
-  }
-
   async loadSession(sessionId: string): Promise<ReadingSession> {
     const session = await this.sessions.load(sessionId)
     if (session === null) throw new SessionNotFoundError(sessionId)
     return session
-  }
-
-  load(sessionId: string): Promise<ReadingSession> {
-    return this.loadSession(sessionId)
   }
 
   /** Record an already-resolved lookup and persist the new session snapshot. */
@@ -242,10 +202,6 @@ export class LearningSessionService {
       await this.sessions.save(next)
       return next
     })
-  }
-
-  recordDictionaryLookup(sessionId: string, input: RecordLookupInput): Promise<ReadingSession> {
-    return this.recordLookup(sessionId, input)
   }
 
   /** Resolve a word and then record its article/example lookup in the session. */
@@ -272,20 +228,12 @@ export class LearningSessionService {
     })
   }
 
-  review(sessionId: string, cardId: CardId, rating: Rating, at?: Date): Promise<ReviewActionResult> {
-    return this.reviewCard(sessionId, cardId, rating, at)
-  }
-
   undoReview(sessionId: string, cardId: CardId, actionId?: string, at?: Date): Promise<ReviewActionResult> {
     return this.enqueueSessionMutation(sessionId, async () => {
       const session = await this.loadSession(sessionId)
       this.assertStatus(session, 'reading', 'undo a card review')
       return this.reviews.undo(session, cardId, actionId, at)
     })
-  }
-
-  undo(sessionId: string, cardId: CardId, actionId?: string, at?: Date): Promise<ReviewActionResult> {
-    return this.undoReview(sessionId, cardId, actionId, at)
   }
 
   /** Fetch content through the injected provider for a started cycle. */
@@ -326,10 +274,6 @@ export class LearningSessionService {
     })
   }
 
-  startQuiz(sessionId: string, content?: CycleContent | readonly QuizQuestion[]): Promise<QuizSessionSnapshot> {
-    return this.transitionToQuiz(sessionId, content)
-  }
-
   async getQuizState(sessionId: string): Promise<QuizState> {
     const session = await this.loadSession(sessionId)
     this.assertStatus(session, 'quiz', 'read quiz state')
@@ -346,14 +290,6 @@ export class LearningSessionService {
       await this.quizStateRepository.save(sessionId, quiz)
       return { session, quiz: cloneQuizState(quiz) }
     })
-  }
-
-  answer(sessionId: string, questionId: string, optionId: string): Promise<QuizSessionSnapshot> {
-    return this.answerQuestion(sessionId, questionId, optionId)
-  }
-
-  answerQuizQuestion(sessionId: string, questionId: string, optionId: string): Promise<QuizSessionSnapshot> {
-    return this.answerQuestion(sessionId, questionId, optionId)
   }
 
   quizProgress(sessionId: string): Promise<QuizProgress> {
@@ -385,10 +321,6 @@ export class LearningSessionService {
     })
   }
 
-  complete(sessionId: string, at?: Date): Promise<ReadingSession> {
-    return this.completeSession(sessionId, at)
-  }
-
   abandonSession(sessionId: string, at?: Date): Promise<ReadingSession> {
     return this.enqueueSessionMutation(sessionId, async () => {
       const session = await this.loadSession(sessionId)
@@ -412,10 +344,6 @@ export class LearningSessionService {
     })
   }
 
-  abandon(sessionId: string, at?: Date): Promise<ReadingSession> {
-    return this.abandonSession(sessionId, at)
-  }
-
   getUnregisteredLookups(session: ReadingSession): UnregisteredLookup[] {
     return this.readingSessions.getUnregisteredLookups(session)
   }
@@ -425,40 +353,35 @@ export class LearningSessionService {
     return this.batchAdds.candidates(session)
   }
 
-  unregisteredCandidates(sessionId: string): Promise<BatchCandidate[]> {
-    return this.getCandidates(sessionId)
-  }
-
   async createBatchSelection(sessionId: string): Promise<BatchSelectionState> {
-    return this.batchAdds.createSelection(await this.getCandidates(sessionId))
+    const session = await this.loadSession(sessionId)
+    const candidates = this.batchAdds.candidates(session)
+    const selection = this.batchAdds.createSelection(sessionId, candidates)
+    assertBatchSelectionMatches(selection, sessionId, candidates)
+    return selection
   }
 
   toggleBatchSelection(state: BatchSelectionState, word: string): BatchSelectionState {
     return this.batchAdds.toggle(state, word)
   }
 
-  async addSelectedCandidates(
+  addSelectedCandidates(
     sessionId: string,
     selection: BatchSelectionState,
     creator?: CardCreator,
   ): Promise<Card[]> {
-    const session = await this.loadSession(sessionId)
-    if (session.status === 'abandoned') {
-      throw new SessionOrchestrationError('Cannot add lookup candidates from an abandoned session')
-    }
-    const selectedCreator = creator ?? this.creator
-    if (selectedCreator === undefined) {
-      throw new SessionOrchestrationError('A CardCreator is required to batch-add candidates')
-    }
-    return this.batchAdds.add(selection, selectedCreator)
-  }
-
-  batchAdd(sessionId: string, selection: BatchSelectionState, creator?: CardCreator): Promise<Card[]> {
-    return this.addSelectedCandidates(sessionId, selection, creator)
-  }
-
-  addSelectedWords(sessionId: string, selection: BatchSelectionState, creator?: CardCreator): Promise<Card[]> {
-    return this.addSelectedCandidates(sessionId, selection, creator)
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      if (session.status === 'abandoned') {
+        throw new SessionOrchestrationError('Cannot add lookup candidates from an abandoned session')
+      }
+      assertBatchSelectionMatches(selection, sessionId, this.batchAdds.candidates(session))
+      const selectedCreator = creator ?? this.creator
+      if (selectedCreator === undefined) {
+        throw new SessionOrchestrationError('A CardCreator is required to batch-add candidates')
+      }
+      return this.batchAdds.add(selection, selectedCreator)
+    })
   }
 
   private assertStatus(session: ReadingSession, expected: ReadingSession['status'], operation: string): void {
@@ -542,12 +465,4 @@ export class LearningSessionService {
       if (this.sessionMutations.get(sessionId) === current) this.sessionMutations.delete(sessionId)
     })
   }
-
-  private isTodayPlan(value: TodayPlan | SessionCycle): value is TodayPlan {
-    return !Array.isArray(value) && 'cycles' in value
-  }
 }
-
-/** Explicit names for consumers that call the boundary an orchestrator. */
-export { LearningSessionService as LearningSessionOrchestrator, LearningSessionService as ReadingSessionOrchestrator }
-export type SessionOrchestratorOptions = LearningSessionServiceOptions

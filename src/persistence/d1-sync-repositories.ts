@@ -122,7 +122,14 @@ const mapSession = (row: ReadingSessionRow): ReadingSession => {
   return deserializeReadingSession(serialized)
 }
 
-/** D1 card persistence scoped permanently to one authenticated user. */
+/**
+ * D1 card persistence scoped permanently to one authenticated user.
+ *
+ * D1 does not currently implement the optional repository-level atomic
+ * createIfAbsent operation. CardService supplies the required CardCreator
+ * method with a find-then-create fallback, so concurrent D1 creators can
+ * still race and create duplicate normalized words.
+ */
 export class D1CardRepository implements CardRepository {
   constructor(private readonly db: D1Database, private readonly userId: string) {}
 
