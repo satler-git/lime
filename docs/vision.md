@@ -127,6 +127,14 @@ wpm、スクロール逆行、ひっかかり箇所は `scroll_pos` の時系列
 BYO キーのため夜間 batch 生成はできないが、ストリーミングと先読み生成で待ち時間はほぼ消える。
 コストは 1 日あたり出力 1 万 token 強であり、中位モデルで月数十円から数百円に収まる。
 
+## 同期 API の transport 契約
+
+- ブラウザの同期クライアントは `/api/sync` の GET/POST だけを扱い、認証 cookie は `credentials: "same-origin"` で同一オリジンの場合だけ送信する。クロスオリジン同期と CORS はサポートしない
+- `baseUrl` は相対パス、または同一オリジンのテスト・デプロイ先を解決するための絶対 URL に限る。`//` で始まる protocol-relative URL は、期待するオリジンに解決できてもサポートしない
+- Worker の POST は `Origin` ヘッダーを必須とし、`APP_URL` の origin と完全一致する場合だけ受け付ける。GET はブラウザ以外のクライアントのため `Origin` 省略を許可するが、提示された origin は同一でなければならない。クロスオリジン同期と CORS はサポートしない
+- 成功した GET/POST の同期レスポンスは `Content-Type: application/json` を必須とし、`charset` などのパラメータは許可する。欠落または別の media type は generic な invalid-response として扱う
+- 同期レスポンスと batch request は hard cap と bounded reader を持ち、cache は常に `private, no-store` とする。GET は超過検出のため各 top-level type を hard cap + 1 件までサーバー側で materialize してから generic な 413 を返す場合があるが、結果を切り捨てない。未対応メソッドも `/api/sync` 上では JSON の 405 を返す
+
 ## 未決事項
 
 - 生成に使う LLM モデルとプロンプト設計(15 語を正しい語義で使わせる検証を含む)

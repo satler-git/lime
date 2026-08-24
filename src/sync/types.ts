@@ -49,7 +49,11 @@ export type SyncBatchResponse = {
 }
 
 export const MAX_SYNC_REQUEST_BODY_BYTES = 1 * 1024 * 1024
+export const MAX_SYNC_RESPONSE_BODY_BYTES = 4 * 1024 * 1024
+/** Explicit current sync hard cap: at most this many records per top-level type per batch or GET response; no cursor protocol yet. */
 export const MAX_SYNC_ITEMS_PER_TYPE = 1_000
+export const MAX_SYNC_CARD_IDS_PER_SESSION = 1_000
+export const MAX_SYNC_LOOKUP_EVENTS_PER_SESSION = 1_000
 
 const cardStates: readonly CardState[] = ['new', 'learning', 'review', 'relearning']
 const ratings: readonly Rating[] = ['again', 'hard', 'good', 'easy']
@@ -68,6 +72,18 @@ const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid()
 const stringValue = (value: unknown): string => typeof value === 'string' && value.trim().length > 0 ? value : invalid()
 const numberValue = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : invalid()
+const nonNegativeNumberValue = (value: unknown): number => {
+  const number = numberValue(value)
+  return number >= 0 ? number : invalid()
+}
+const nonNegativeIntegerValue = (value: unknown): number => {
+  const number = numberValue(value)
+  return Number.isSafeInteger(number) && number >= 0 ? number : invalid()
+}
+const difficultyValue = (value: unknown): number => {
+  const number = nonNegativeNumberValue(value)
+  return number <= 10 ? number : invalid()
+}
 const booleanValue = (value: unknown): boolean => typeof value === 'boolean' ? value : invalid()
 const dateString = (value: unknown): string => {
   const text = stringValue(value)
@@ -84,7 +100,10 @@ const oneOf = <T extends string>(value: unknown, values: readonly T[]): T =>
 
 const parsePosition = (value: unknown): TextPosition => {
   const input = record(value)
-  return { paragraph: numberValue(input.paragraph), character: numberValue(input.character) }
+  return {
+    paragraph: nonNegativeIntegerValue(input.paragraph),
+    character: nonNegativeIntegerValue(input.character),
+  }
 }
 
 const parseCard = (value: unknown): SerializedCard => {
@@ -95,13 +114,13 @@ const parseCard = (value: unknown): SerializedCard => {
     word: stringValue(input.word),
     createdAt: dateString(input.createdAt),
     due: dateString(input.due),
-    stability: numberValue(input.stability),
-    difficulty: numberValue(input.difficulty),
-    elapsedDays: numberValue(input.elapsedDays),
-    scheduledDays: numberValue(input.scheduledDays),
-    learningSteps: numberValue(input.learningSteps),
-    reps: numberValue(input.reps),
-    lapses: numberValue(input.lapses),
+    stability: nonNegativeNumberValue(input.stability),
+    difficulty: difficultyValue(input.difficulty),
+    elapsedDays: nonNegativeIntegerValue(input.elapsedDays),
+    scheduledDays: nonNegativeIntegerValue(input.scheduledDays),
+    learningSteps: nonNegativeIntegerValue(input.learningSteps),
+    reps: nonNegativeIntegerValue(input.reps),
+    lapses: nonNegativeIntegerValue(input.lapses),
     state: oneOf(input.state, cardStates),
     lastReview,
   }
@@ -136,18 +155,20 @@ const parseLookupEvent = (value: unknown): SerializedLookupEvent => {
 
 const parseSession = (value: unknown): SerializedReadingSession => {
   const input = record(value)
-  const cardIds = arrayValue(input.cardIds).map(stringValue)
-  const lookupEvents = arrayValue(input.lookupEvents).map(parseLookupEvent)
+  const cardIds = arrayValue(input.cardIds)
+  if (cardIds.length > MAX_SYNC_CARD_IDS_PER_SESSION) invalid()
+  const lookupEvents = arrayValue(input.lookupEvents)
+  if (lookupEvents.length > MAX_SYNC_LOOKUP_EVENTS_PER_SESSION) invalid()
   return {
     id: stringValue(input.id),
-    cardIds,
+    cardIds: cardIds.map(stringValue),
     status: oneOf(input.status, sessionStatuses),
     createdAt: dateString(input.createdAt),
     startedAt: nullableDateString(input.startedAt),
     quizStartedAt: nullableDateString(input.quizStartedAt),
     completedAt: nullableDateString(input.completedAt),
     abandonedAt: nullableDateString(input.abandonedAt),
-    lookupEvents,
+    lookupEvents: lookupEvents.map(parseLookupEvent),
   }
 }
 

@@ -66,6 +66,7 @@ class FakeD1 {
     if (sql.includes('AND id = ?')) rows = rows.filter((row) => row.id === args[1])
     if (sql.includes('AND session_id = ?')) rows = rows.filter((row) => row.session_id === args[1] && row.card_id === args[2] && row.undone === 0)
     if (sql.includes('AND due <= ?')) rows = rows.filter((row) => (row.due as number) <= (args[1] as number))
+    if (sql.includes('LIMIT ?')) rows = rows.slice(0, args[args.length - 1] as number)
     if (first) return (rows[0] as T | undefined) ?? null
     return rows as T[]
   }
@@ -84,6 +85,29 @@ describe('D1 sync repositories', () => {
     expect(fake.calls[1]?.args).toEqual(['user-a', card.id])
     expect(await new D1CardRepository(fake.db, 'user-b').load(card.id)).toBeNull()
     expect(fake.calls[2]?.args[0]).toBe('user-b')
+  })
+
+  it('always uses a required bounded limit for sync reads', async () => {
+    const fake = new FakeD1()
+    await new D1CardRepository(fake.db, 'user-a').loadAllWithUpdatedAt(7)
+    await new D1ReviewActionRepository(fake.db, 'user-a').loadAllWithUpdatedAt(8)
+    await new D1ReadingSessionRepository(fake.db, 'user-a').loadAllWithUpdatedAt(9)
+
+    expect(fake.calls.map(({ sql, args }) => ({ sql, args }))).toEqual([
+      expect.objectContaining({ sql: expect.stringContaining('ORDER BY id LIMIT ?'), args: ['user-a', 7] }),
+      expect.objectContaining({ sql: expect.stringContaining('ORDER BY timestamp, id LIMIT ?'), args: ['user-a', 8] }),
+      expect.objectContaining({ sql: expect.stringContaining('ORDER BY created_at, id LIMIT ?'), args: ['user-a', 9] }),
+    ])
+  })
+
+  it('applies LIMIT bind values to bounded sync reads', async () => {
+    const fake = new FakeD1()
+    const repository = new D1CardRepository(fake.db, 'user-a')
+    await repository.saveAt(card, new Date('2025-01-03T00:00:00.000Z'))
+    await repository.saveAt(createCard({ id: 'card-2', word: 'salut', now: new Date('2025-01-02T00:00:00.000Z') }), new Date('2025-01-03T00:00:00.000Z'))
+
+    await expect(repository.loadAllWithUpdatedAt(1)).resolves.toHaveLength(1)
+    await expect(repository.loadAllWithUpdatedAt(2)).resolves.toHaveLength(2)
   })
 
   it('keeps the newest card, action, and session envelope', async () => {
