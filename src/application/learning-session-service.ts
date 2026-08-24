@@ -159,6 +159,7 @@ export class LearningSessionService {
   private readonly dictionary?: DictionaryLookup
   private readonly plannedCycle?: TodayPlan
   private readonly cycles = new Map<string, Card[]>()
+  private readonly sessionMutations = new Map<string, Promise<unknown>>()
 
   constructor(options: LearningSessionServiceOptions) {
     const repository = options.readingSessionRepository ?? options.sessionRepository
@@ -233,12 +234,14 @@ export class LearningSessionService {
   }
 
   /** Record an already-resolved lookup and persist the new session snapshot. */
-  async recordLookup(sessionId: string, input: RecordLookupInput): Promise<ReadingSession> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'reading', 'record a dictionary lookup')
-    const next = this.readingSessions.recordLookup(session, input)
-    await this.sessions.save(next)
-    return next
+  recordLookup(sessionId: string, input: RecordLookupInput): Promise<ReadingSession> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'reading', 'record a dictionary lookup')
+      const next = this.readingSessions.recordLookup(session, input)
+      await this.sessions.save(next)
+      return next
+    })
   }
 
   recordDictionaryLookup(sessionId: string, input: RecordLookupInput): Promise<ReadingSession> {
@@ -246,33 +249,39 @@ export class LearningSessionService {
   }
 
   /** Resolve a word and then record its article/example lookup in the session. */
-  async lookup(sessionId: string, input: RecordLookupInput): Promise<DictionaryLookupSnapshot> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'reading', 'look up a dictionary word')
-    validateLookupInput(input)
-    if (this.dictionary === undefined) {
-      throw new SessionOrchestrationError('A DictionaryLookup provider is required for lookup')
-    }
-    const result = await this.dictionary.lookup(input.word.trim())
-    const next = this.readingSessions.recordLookup(session, input)
-    await this.sessions.save(next)
-    return { session: next, result }
+  lookup(sessionId: string, input: RecordLookupInput): Promise<DictionaryLookupSnapshot> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'reading', 'look up a dictionary word')
+      validateLookupInput(input)
+      if (this.dictionary === undefined) {
+        throw new SessionOrchestrationError('A DictionaryLookup provider is required for lookup')
+      }
+      const result = await this.dictionary.lookup(input.word.trim())
+      const next = this.readingSessions.recordLookup(session, input)
+      await this.sessions.save(next)
+      return { session: next, result }
+    })
   }
 
-  async reviewCard(sessionId: string, cardId: CardId, rating: Rating, at?: Date): Promise<ReviewActionResult> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'reading', 'review a card')
-    return this.reviews.review(session, cardId, rating, at)
+  reviewCard(sessionId: string, cardId: CardId, rating: Rating, at?: Date): Promise<ReviewActionResult> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'reading', 'review a card')
+      return this.reviews.review(session, cardId, rating, at)
+    })
   }
 
   review(sessionId: string, cardId: CardId, rating: Rating, at?: Date): Promise<ReviewActionResult> {
     return this.reviewCard(sessionId, cardId, rating, at)
   }
 
-  async undoReview(sessionId: string, cardId: CardId, actionId?: string, at?: Date): Promise<ReviewActionResult> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'reading', 'undo a card review')
-    return this.reviews.undo(session, cardId, actionId, at)
+  undoReview(sessionId: string, cardId: CardId, actionId?: string, at?: Date): Promise<ReviewActionResult> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'reading', 'undo a card review')
+      return this.reviews.undo(session, cardId, actionId, at)
+    })
   }
 
   undo(sessionId: string, cardId: CardId, actionId?: string, at?: Date): Promise<ReviewActionResult> {
@@ -295,24 +304,26 @@ export class LearningSessionService {
     sessionId: string,
     content?: CycleContent | readonly QuizQuestion[],
   ): Promise<QuizSessionSnapshot> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'reading', 'transition to quiz')
-    const supplied = content ?? await this.getContent(sessionId)
-    const questions = isCycleContent(supplied) ? supplied.questions : supplied
-    const quiz = this.quizzes.create(questions)
-    const next = this.readingSessions.transitionToQuiz(session)
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'reading', 'transition to quiz')
+      const supplied = content ?? await this.getContent(sessionId)
+      const questions = isCycleContent(supplied) ? supplied.questions : supplied
+      const quiz = this.quizzes.create(questions)
+      const next = this.readingSessions.transitionToQuiz(session)
 
-    // Save the state first so a successful session transition can never leave
-    // a persisted quiz session without its resumable quiz state. If saving the
-    // session fails, remove the state and preserve the original failure.
-    await this.quizStateRepository.save(sessionId, quiz)
-    try {
-      await this.sessions.save(next)
-    } catch (error) {
-      await this.compensateQuizState(sessionId, null)
-      throw error
-    }
-    return { session: next, quiz: cloneQuizState(quiz) }
+      // Save the state first so a successful session transition can never leave
+      // a persisted quiz session without its resumable quiz state. If saving the
+      // session fails, remove the state and preserve the original failure.
+      await this.quizStateRepository.save(sessionId, quiz)
+      try {
+        await this.sessions.save(next)
+      } catch (error) {
+        await this.compensateQuizState(sessionId, null)
+        throw error
+      }
+      return { session: next, quiz: cloneQuizState(quiz) }
+    })
   }
 
   startQuiz(sessionId: string, content?: CycleContent | readonly QuizQuestion[]): Promise<QuizSessionSnapshot> {
@@ -326,13 +337,15 @@ export class LearningSessionService {
     return cloneQuizState(quiz)
   }
 
-  async answerQuestion(sessionId: string, questionId: string, optionId: string): Promise<QuizSessionSnapshot> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'quiz', 'answer a quiz question')
-    const previous = await this.loadQuizState(sessionId)
-    const quiz = this.quizzes.answer(previous, questionId, optionId)
-    await this.quizStateRepository.save(sessionId, quiz)
-    return { session, quiz: cloneQuizState(quiz) }
+  answerQuestion(sessionId: string, questionId: string, optionId: string): Promise<QuizSessionSnapshot> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'quiz', 'answer a quiz question')
+      const previous = await this.loadQuizState(sessionId)
+      const quiz = this.quizzes.answer(previous, questionId, optionId)
+      await this.quizStateRepository.save(sessionId, quiz)
+      return { session, quiz: cloneQuizState(quiz) }
+    })
   }
 
   answer(sessionId: string, questionId: string, optionId: string): Promise<QuizSessionSnapshot> {
@@ -348,51 +361,55 @@ export class LearningSessionService {
   }
 
   /** Complete only after all five quiz questions have been answered. */
-  async completeSession(sessionId: string, at?: Date): Promise<ReadingSession> {
-    const session = await this.loadSession(sessionId)
-    this.assertStatus(session, 'quiz', 'complete the session')
-    const quiz = await this.loadQuizState(sessionId)
-    if (!this.quizzes.isComplete(quiz)) {
-      throw new SessionOrchestrationError('Cannot complete the session until the quiz is complete')
-    }
-    const next = this.readingSessions.complete(session, at)
+  completeSession(sessionId: string, at?: Date): Promise<ReadingSession> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      this.assertStatus(session, 'quiz', 'complete the session')
+      const quiz = await this.loadQuizState(sessionId)
+      if (!this.quizzes.isComplete(quiz)) {
+        throw new SessionOrchestrationError('Cannot complete the session until the quiz is complete')
+      }
+      const next = this.readingSessions.complete(session, at)
 
-    // Remove quiz state first. If the session save fails, restore the state so
-    // the original quiz session remains resumable.
-    await this.quizStateRepository.delete(sessionId)
-    try {
-      await this.sessions.save(next)
-    } catch (error) {
-      await this.compensateQuizState(sessionId, quiz)
-      throw error
-    }
-    this.cycles.delete(sessionId)
-    return next
+      // Remove quiz state first. If the session save fails, restore the state so
+      // the original quiz session remains resumable.
+      await this.quizStateRepository.delete(sessionId)
+      try {
+        await this.sessions.save(next)
+      } catch (error) {
+        await this.compensateQuizState(sessionId, quiz)
+        throw error
+      }
+      this.cycles.delete(sessionId)
+      return next
+    })
   }
 
   complete(sessionId: string, at?: Date): Promise<ReadingSession> {
     return this.completeSession(sessionId, at)
   }
 
-  async abandonSession(sessionId: string, at?: Date): Promise<ReadingSession> {
-    const session = await this.loadSession(sessionId)
-    if (session.status === 'completed' || session.status === 'abandoned') {
-      throw new SessionOrchestrationError(`Cannot abandon a ${session.status} session`)
-    }
-    const quiz = await this.quizStateRepository.load(sessionId)
-    const next = this.readingSessions.abandon(session, at)
+  abandonSession(sessionId: string, at?: Date): Promise<ReadingSession> {
+    return this.enqueueSessionMutation(sessionId, async () => {
+      const session = await this.loadSession(sessionId)
+      if (session.status === 'completed' || session.status === 'abandoned') {
+        throw new SessionOrchestrationError(`Cannot abandon a ${session.status} session`)
+      }
+      const quiz = await this.quizStateRepository.load(sessionId)
+      const next = this.readingSessions.abandon(session, at)
 
-    // Deleting first means a successful abandonment cannot retain resumable
-    // quiz state. Restore the prior state if the session save fails.
-    await this.quizStateRepository.delete(sessionId)
-    try {
-      await this.sessions.save(next)
-    } catch (error) {
-      await this.compensateQuizState(sessionId, quiz)
-      throw error
-    }
-    this.cycles.delete(sessionId)
-    return next
+      // Deleting first means a successful abandonment cannot retain resumable
+      // quiz state. Restore the prior state if the session save fails.
+      await this.quizStateRepository.delete(sessionId)
+      try {
+        await this.sessions.save(next)
+      } catch (error) {
+        await this.compensateQuizState(sessionId, quiz)
+        throw error
+      }
+      this.cycles.delete(sessionId)
+      return next
+    })
   }
 
   abandon(sessionId: string, at?: Date): Promise<ReadingSession> {
@@ -515,6 +532,15 @@ export class LearningSessionService {
       // The original persistence error is rethrown by the caller. A failed
       // compensation leaves the repositories potentially out of sync.
     }
+  }
+
+  private enqueueSessionMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.sessionMutations.get(sessionId) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(operation)
+    this.sessionMutations.set(sessionId, current)
+    return current.finally(() => {
+      if (this.sessionMutations.get(sessionId) === current) this.sessionMutations.delete(sessionId)
+    })
   }
 
   private isTodayPlan(value: TodayPlan | SessionCycle): value is TodayPlan {

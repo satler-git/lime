@@ -1,5 +1,5 @@
 import type { CardService } from '../application/card-service'
-import { cloneCard, type CardId, type Rating } from '../domain/card'
+import { cloneCard, type Card, type CardId, type Rating } from '../domain/card'
 import type { ReadingSession } from '../session/types'
 import { cloneReviewAction } from './repository'
 import type {
@@ -116,7 +116,12 @@ export class ReviewService {
       undone: false,
     }
 
-    await this.actionRepository.save(action)
+    try {
+      await this.actionRepository.save(action)
+    } catch (error) {
+      await this.restoreAfterFailure(action.previousState)
+      throw error
+    }
     return {
       previous: cloneCard(action.previousState),
       next: cloneCard(action.nextState),
@@ -176,7 +181,12 @@ export class ReviewService {
       undone: true,
       undoneAt: copyDate(at),
     }
-    await this.actionRepository.save(undoneAction)
+    try {
+      await this.actionRepository.save(undoneAction)
+    } catch (error) {
+      await this.restoreAfterFailure(latest.nextState)
+      throw error
+    }
 
     return {
       previous: cloneCard(undoneAction.nextState),
@@ -210,6 +220,13 @@ export class ReviewService {
   private assertReviewableSession(session: ReadingSession): void {
     if (session.status !== 'reading') {
       throw new ReviewValidationError(`Cannot review cards in a ${session.status} session; session must be reading`)
+    }
+  }
+
+  private async restoreAfterFailure(card: Card): Promise<void> {
+    try {
+      await this.cardService.restore(card)
+    } catch {
     }
   }
 
