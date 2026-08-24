@@ -1,4 +1,5 @@
 export * from './application'
+export * from './dictionary'
 export * from './domain/card'
 export * from './domain/word'
 export * from './persistence/indexed-db-card-repository'

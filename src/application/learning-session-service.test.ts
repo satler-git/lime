@@ -135,7 +135,7 @@ const makeApplication = (
         return content
       },
     },
-    dictionaryLookup: {
+    dictionaryResolver: {
       async lookup(word: string): Promise<{ word: string }> {
         lookedUp.push(word)
         return { word }

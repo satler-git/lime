@@ -32,12 +32,12 @@ export interface ContentProvider {
   getContent(cycle: readonly Card[]): Promise<CycleContent>
 }
 
-/** Result returned by an injected dictionary adapter. */
-export type DictionaryLookupResult = unknown
+/** Result returned by an injected dictionary resolver. */
+export type DictionaryResolverResult = unknown
 
-/** Provider-neutral dictionary lookup port used by the session boundary. */
-export interface DictionaryLookup {
-  lookup(word: string): Promise<DictionaryLookupResult>
+/** Provider-neutral dictionary resolver port used by the session boundary. */
+export interface DictionaryResolver {
+  lookup(word: string): Promise<DictionaryResolverResult>
 }
 
 /** The session-state operations needed by this application boundary. */
@@ -84,7 +84,7 @@ export type LearningSessionServiceOptions = {
   cardLoader?: CardLoader
   todayPlan?: TodayPlan
   contentProvider?: ContentProvider
-  dictionaryLookup?: DictionaryLookup
+  dictionaryResolver?: DictionaryResolver
   sessionServiceOptions?: ReadingSessionServiceOptions
   /** A quiz-state repository must be explicitly supplied to the application boundary. */
   quizStateRepository: QuizStateRepository
@@ -95,9 +95,9 @@ export type QuizSessionSnapshot = {
   quiz: QuizState
 }
 
-export type DictionaryLookupSnapshot = {
+export type DictionaryResolverSnapshot = {
   session: ReadingSession
-  result: DictionaryLookupResult
+  result: DictionaryResolverResult
 }
 
 /** Error raised when an application operation references a missing session. */
@@ -137,7 +137,7 @@ export class LearningSessionService {
   private readonly creator?: CardCreator
   private readonly cardLoader?: CardLoader
   private readonly content?: ContentProvider
-  private readonly dictionary?: DictionaryLookup
+  private readonly dictionary?: DictionaryResolver
   private readonly plannedCycle?: TodayPlan
   private readonly cycles = new Map<string, Card[]>()
   private readonly sessionMutations = new Map<string, Promise<unknown>>()
@@ -152,7 +152,7 @@ export class LearningSessionService {
     this.creator = options.cardCreator
     this.cardLoader = options.cardLoader
     this.content = options.contentProvider
-    this.dictionary = options.dictionaryLookup
+    this.dictionary = options.dictionaryResolver
     this.plannedCycle = options.todayPlan
   }
 
@@ -205,13 +205,13 @@ export class LearningSessionService {
   }
 
   /** Resolve a word and then record its article/example lookup in the session. */
-  lookup(sessionId: string, input: RecordLookupInput): Promise<DictionaryLookupSnapshot> {
+  lookup(sessionId: string, input: RecordLookupInput): Promise<DictionaryResolverSnapshot> {
     return this.enqueueSessionMutation(sessionId, async () => {
       const session = await this.loadSession(sessionId)
       this.assertStatus(session, 'reading', 'look up a dictionary word')
       validateLookupInput(input)
       if (this.dictionary === undefined) {
-        throw new SessionOrchestrationError('A DictionaryLookup provider is required for lookup')
+        throw new SessionOrchestrationError('A DictionaryResolver provider is required for lookup')
       }
       const result = await this.dictionary.lookup(input.word.trim())
       const next = this.readingSessions.recordLookup(session, input)
