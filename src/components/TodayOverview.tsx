@@ -5,7 +5,7 @@ import { ReadingProgress } from './ReadingProgress'
 import { StartReadingButton } from './StartReadingButton'
 import { WordCountSummary } from './WordCountSummary'
 
-type RecentSession = {
+export type RecentSession = {
   cycle: number
   title: string
   words: number

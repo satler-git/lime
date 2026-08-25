@@ -34,6 +34,14 @@ export type ReadingFlowApplication = Pick<
   | 'addSelectedCandidates'
 >
 
+export type ReadingFlowCompleteResult = {
+  cycle: number
+  title: string
+  words: number
+  score?: number
+  totalQuestions?: number
+}
+
 export type ReadingFlowProps = {
   session: ReadingSession
   content: CycleContent
@@ -52,6 +60,7 @@ export type ReadingFlowProps = {
   initialBatchSelection?: BatchSelectionState
   completionScore?: number
   telemetry?: TelemetryTransport
+  onSessionComplete?: (result: ReadingFlowCompleteResult) => void
 }
 
 type OpenWord = {
@@ -146,6 +155,7 @@ export function ReadingFlow({
   initialBatchSelection,
   completionScore,
   telemetry,
+  onSessionComplete,
 }: ReadingFlowProps) {
   const [session, setSession] = useState(initialSession)
   const [phase, setPhase] = useState<ReadingFlowPhase>(() => phaseForSessionStatus(initialSession.status))
@@ -173,9 +183,15 @@ export function ReadingFlow({
   const [batchLoadAttempt, setBatchLoadAttempt] = useState(0)
   const [batchAdding, setBatchAdding] = useState(false)
   const [batchAdded, setBatchAdded] = useState(false)
+  const [completing, setCompleting] = useState(false)
+  const completingRef = useRef(false)
 
   const paragraphs = useMemo(() => getArticleParagraphs(content.article), [content.article])
   const articleWordCount = useMemo(() => content.article.trim().split(/\s+/).filter(Boolean).length, [content.article])
+  const sessionTitle = useMemo(() => {
+    const first = paragraphs[0]?.trim() ?? ''
+    return first.length > 0 ? first.slice(0, 40) : title
+  }, [paragraphs, title])
 
   useEffect(() => {
     telemetryRef.current = telemetry
@@ -510,6 +526,28 @@ export function ReadingFlow({
   const currentQuestion: QuizQuestion | undefined = quiz?.questions[quiz.currentQuestionIndex]
   const displayScore = quiz?.score ?? completionScore
 
+  const handleSessionComplete = useCallback(() => {
+    onSessionComplete?.({
+      cycle,
+      title: sessionTitle,
+      words: session.cardIds.length,
+      score: displayScore,
+      totalQuestions: quiz?.questions.length ?? 5,
+    })
+  }, [cycle, displayScore, onSessionComplete, quiz?.questions.length, session.cardIds.length, sessionTitle])
+
+  const handleCompleteClick = useCallback(() => {
+    if (completingRef.current) return
+    completingRef.current = true
+    setCompleting(true)
+    try {
+      handleSessionComplete()
+    } catch {
+      completingRef.current = false
+      setCompleting(false)
+    }
+  }, [handleSessionComplete])
+
   return (
     <main className="min-h-screen bg-background px-5 py-8 text-text sm:px-8 sm:py-12" data-phase={phase}>
       <div className="mx-auto w-full max-w-[720px]">
@@ -610,6 +648,16 @@ export function ReadingFlow({
                 />
                 {batchAdded && <p className="mt-3 text-xs text-accent" role="status">SRSに追加しました</p>}
               </div>
+            )}
+            {onSessionComplete !== undefined && (
+              <button
+                className="mt-8 min-h-11 w-full cursor-pointer rounded-[7px] border-0 bg-accent px-4 text-sm font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.99] disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+                type="button"
+                onClick={() => void handleCompleteClick()}
+                disabled={completing || batchAdding || batchLoading}
+              >
+                {cycle < totalCycles ? '次のサイクルへ' : '今日の学習に戻る'}
+              </button>
             )}
           </section>
         )}

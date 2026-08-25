@@ -21,6 +21,7 @@ export type UseLearningSessionOptions = {
   contentProvider?: ContentProvider
   cardService?: CardService
   cardRepository?: CardRepository
+  cycleIndex?: number
 }
 
 export type UseLearningSessionResult = {
@@ -35,7 +36,7 @@ export type UseLearningSessionResult = {
 }
 
 export function useLearningSession(options: UseLearningSessionOptions): UseLearningSessionResult {
-  const { userId, todayPlan, contentProvider, cardService, cardRepository } = options
+  const { userId, todayPlan, contentProvider, cardService, cardRepository, cycleIndex = 0 } = options
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -76,6 +77,12 @@ export function useLearningSession(options: UseLearningSessionOptions): UseLearn
       return
     }
 
+    if (cycleIndex < 0 || cycleIndex >= todayPlan.cycles.length) {
+      setError('指定されたサイクルが見つかりません')
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
 
     const initialize = async (): Promise<void> => {
@@ -99,7 +106,7 @@ export function useLearningSession(options: UseLearningSessionOptions): UseLearn
         })
 
         const [startedSession, allCards] = await Promise.all([
-          learningApp.startPlannedCycle(0),
+          learningApp.startPlannedCycle(cycleIndex),
           cardRepository.loadAll(),
         ])
 
@@ -117,11 +124,11 @@ export function useLearningSession(options: UseLearningSessionOptions): UseLearn
           }
         }
 
-        const firstCycle = todayPlan.cycles[0]
+        const cycleCards = todayPlan.cycles[cycleIndex]
         const sessionCardMap = new Map<string, Card>()
         const targetWordsRecord: Record<string, WordKind> = {}
-        if (firstCycle !== undefined) {
-          for (const card of firstCycle) {
+        if (cycleCards !== undefined) {
+          for (const card of cycleCards) {
             const key = normalizeWord(card.word)
             if (!sessionCardMap.has(key)) {
               sessionCardMap.set(key, card)
@@ -152,7 +159,7 @@ export function useLearningSession(options: UseLearningSessionOptions): UseLearn
     return () => {
       cancelled = true
     }
-  }, [userId, todayPlan, contentProvider, cardService, cardRepository])
+  }, [userId, todayPlan, contentProvider, cardService, cardRepository, cycleIndex])
 
   return {
     session,

@@ -25,7 +25,6 @@ describe('App routing', () => {
       expect(html).toContain('読解を始める')
     } else if (route === 'reading') {
       expect(html).toContain('読解')
-      expect(html).toContain('ReadingFlow')
       expect(html).toContain('aria-label="ホームに戻る"')
     } else if (route === 'cards') {
       expect(html).toContain('カードを追加・管理')

@@ -5,7 +5,7 @@ import type { CardService } from '../application/card-service'
 import type { CardRepository } from '../repositories/card-repository'
 import type { TelemetryTransport } from '../telemetry/client'
 import { useLearningSession } from '../use-learning-session'
-import { ReadingFlow } from './ReadingFlow'
+import { ReadingFlow, type ReadingFlowCompleteResult } from './ReadingFlow'
 import { dictionaryAdapter } from './dictionary-adapter'
 
 type ReadingScreenProps = {
@@ -15,6 +15,8 @@ type ReadingScreenProps = {
   cardRepository?: CardRepository
   userId?: string
   telemetry?: TelemetryTransport
+  cycleIndex?: number
+  onSessionComplete?: (result: ReadingFlowCompleteResult) => void
 }
 
 function Placeholder() {
@@ -28,7 +30,7 @@ function Placeholder() {
         読解を始める
       </h1>
       <p className="mt-4 text-sm leading-relaxed text-text-muted">
-        この画面には <strong className="text-text">ReadingFlow</strong> が組み込まれます。
+        読解セッションを準備しています…
       </p>
     </main>
   )
@@ -45,7 +47,7 @@ function ErrorState({ error }: { error: string }) {
         読解を始める
       </h1>
       <p className="mt-4 text-sm leading-relaxed text-text-muted" role="alert">
-        <strong className="text-text">ReadingFlow</strong> を開始できませんでした: {error}
+        読解を開始できませんでした: {error}
       </p>
     </main>
   )
@@ -58,6 +60,8 @@ export function ReadingScreen({
   cardRepository,
   userId,
   telemetry,
+  cycleIndex = 0,
+  onSessionComplete,
 }: ReadingScreenProps) {
   const {
     session,
@@ -74,6 +78,7 @@ export function ReadingScreen({
     contentProvider,
     cardService,
     cardRepository,
+    cycleIndex,
   })
 
   if (error !== undefined) {
@@ -91,13 +96,14 @@ export function ReadingScreen({
         content={content}
         title="読解"
         application={application}
-        cycle={1}
+        cycle={cycleIndex + 1}
         totalCycles={todayPlan.cycles.length}
         targetWords={targetWords}
         dictionaryAdapter={dictionaryAdapter}
         isWordInSrs={isWordInSrs}
         cardIdForWord={cardIdForWord}
         telemetry={telemetry}
+        onSessionComplete={onSessionComplete}
       />
     )
   }

@@ -3,7 +3,8 @@ import { AppShell } from './components/AppShell'
 import { CardManagerView } from './components/CardManagerView'
 import { ReadingScreen } from './components/ReadingScreen'
 import { SettingsScreen } from './components/SettingsScreen'
-import { TodayOverview } from './components/TodayOverview'
+import { TodayOverview, type RecentSession } from './components/TodayOverview'
+import { type ReadingFlowCompleteResult } from './components/ReadingFlow'
 import {
   createCycleContentProvider,
   createGenerationSpecFactory,
@@ -27,6 +28,49 @@ export type AppProps = {
 }
 
 const DEFAULT_LLM_CONFIG: LlmConfig = { endpoint: '', model: '', apiKey: '' }
+const PLAN_PROGRESS_KEY = 'lime-today-progress'
+
+type StoredProgress = {
+  planKey: string
+  currentCycleIndex: number
+  completedSessions: RecentSession[]
+}
+
+function planKey(plan: TodayPlan): string {
+  return `${plan.selectedCards.map((card) => card.id).sort().join(',')}:${plan.cycles.length}`
+}
+
+function loadStoredProgress(): StoredProgress | undefined {
+  try {
+    const raw = localStorage.getItem(PLAN_PROGRESS_KEY)
+    if (raw === null) return undefined
+    const parsed = JSON.parse(raw) as unknown
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const candidate = parsed as Partial<StoredProgress>
+    if (
+      typeof candidate.planKey !== 'string' ||
+      typeof candidate.currentCycleIndex !== 'number' ||
+      !Array.isArray(candidate.completedSessions)
+    ) {
+      return undefined
+    }
+    return {
+      planKey: candidate.planKey,
+      currentCycleIndex: candidate.currentCycleIndex,
+      completedSessions: candidate.completedSessions as RecentSession[],
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function saveStoredProgress(progress: StoredProgress): void {
+  try {
+    localStorage.setItem(PLAN_PROGRESS_KEY, JSON.stringify(progress))
+  } catch {
+    // Ignore private-browsing / storage quota errors.
+  }
+}
 
 export default function App({ initialRoute = 'today' }: AppProps) {
   const [route, setRoute] = useState<LimeRoute>(() => (isLimeRoute(initialRoute) ? initialRoute : 'today'))
@@ -47,6 +91,8 @@ export default function App({ initialRoute = 'today' }: AppProps) {
 
   const [dueCards, setDueCards] = useState<Card[]>([])
   const [newCards, setNewCards] = useState<Card[]>([])
+  const [currentCycleIndex, setCurrentCycleIndex] = useState(0)
+  const [completedSessions, setCompletedSessions] = useState<RecentSession[]>([])
 
   useEffect(() => {
     const loaded = loadSettings()
@@ -121,11 +167,62 @@ export default function App({ initialRoute = 'today' }: AppProps) {
     createTodayPlan({ dueCards, newCards, newLimit, reviewLimit })
   ), [dueCards, newCards, newLimit, reviewLimit])
 
+  useEffect(() => {
+    if (todayPlan.selectedCards.length === 0) {
+      setCurrentCycleIndex(0)
+      setCompletedSessions([])
+      return
+    }
+    const stored = loadStoredProgress()
+    const key = planKey(todayPlan)
+    if (stored?.planKey === key) {
+      setCurrentCycleIndex(Math.min(stored.currentCycleIndex, todayPlan.cycles.length))
+      setCompletedSessions(stored.completedSessions)
+    } else {
+      setCurrentCycleIndex(0)
+      setCompletedSessions([])
+    }
+  }, [todayPlan])
+
+  useEffect(() => {
+    if (todayPlan.selectedCards.length === 0) return
+    saveStoredProgress({
+      planKey: planKey(todayPlan),
+      currentCycleIndex,
+      completedSessions,
+    })
+  }, [todayPlan, currentCycleIndex, completedSessions])
+
+  const handleSessionComplete = useCallback((result: ReadingFlowCompleteResult) => {
+    setCompletedSessions((prev) => [
+      ...prev,
+      {
+        cycle: result.cycle,
+        title: result.title,
+        words: result.words,
+        score: result.score === undefined ? undefined : `${result.score} / ${result.totalQuestions ?? 5}問 正解`,
+      },
+    ])
+    if (result.cycle < todayPlan.cycles.length) {
+      setCurrentCycleIndex(result.cycle)
+    } else {
+      setCurrentCycleIndex(todayPlan.cycles.length)
+      navigate('today')
+    }
+  }, [todayPlan, navigate])
+
   const reviewCount = todayPlan.selectedCards.filter((card) => card.state !== 'new').length
   const newCount = todayPlan.selectedCards.filter((card) => card.state === 'new').length
-  const isStartButtonDisabled = isCardLoading || isLimitsLoading || todayPlan.selectedCards.length === 0 || contentProvider === undefined
-  // TODO: track actual completed count instead of hard-coding zero.
-  const todayCompleted = 0
+  const isStartButtonDisabled = isCardLoading || isLimitsLoading || todayPlan.selectedCards.length === 0 || contentProvider === undefined || currentCycleIndex >= todayPlan.cycles.length
+
+  const todayCompleted = useMemo(() => {
+    const completed = completedSessions.reduce((sum, session) => sum + session.words, 0)
+    return Math.min(completed, Math.max(1, todayPlan.selectedCards.length))
+  }, [completedSessions, todayPlan.selectedCards.length])
+
+  const recentSessions = useMemo(() => completedSessions, [completedSessions])
+  const totalCycles = Math.max(1, todayPlan.cycles.length)
+  const cycle = Math.min(currentCycleIndex + 1, totalCycles)
 
   return (
     <AppShell route={route} onNavigate={navigate}>
@@ -137,8 +234,9 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           newLimit={newLimit}
           todayTarget={Math.max(1, todayPlan.selectedCards.length)}
           todayCompleted={todayCompleted}
-          cycle={todayPlan.cycles.length > 0 ? 1 : 0}
-          totalCycles={Math.max(1, todayPlan.cycles.length)}
+          cycle={cycle}
+          totalCycles={totalCycles}
+          recentSessions={recentSessions}
           isLoading={isLimitsLoading}
           isStartButtonDisabled={isStartButtonDisabled}
           syncError={syncError}
@@ -159,6 +257,8 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           cardRepository={cardRepository}
           userId={userId}
           telemetry={telemetry}
+          cycleIndex={currentCycleIndex}
+          onSessionComplete={handleSessionComplete}
         />
       )}
       {route === 'cards' && (
