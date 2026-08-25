@@ -1,4 +1,4 @@
-import { Plus, Search, Trash2, Upload, X, BookOpen } from 'lucide-react'
+import { Plus, Search, Trash2, Upload, BookOpen, ChevronLeft, List, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Card } from '../domain/card'
 import type { DictionaryManagementApplication } from '../import-service'
@@ -7,27 +7,45 @@ import { dictionaryAdapter } from './dictionary-adapter'
 import type { TargetWordData } from './types'
 import { parseCardCsv, parseApkg } from '../card-import'
 
-type CardManagerDialogProps = {
-  open: boolean
-  onClose: () => void
-  cardService: CardService
+type CardManagerViewProps = {
+  cardService: CardService | undefined
   dictionaryApplication?: DictionaryManagementApplication
+  onBack?: () => void
+  onCardsChanged?: () => void
 }
-
-type Tab = 'add' | 'import' | 'manage'
 
 type ImportFormat = 'csv' | 'apkg'
 
 const formatLabels: Record<ImportFormat, string> = { csv: 'CSV / テキスト', apkg: 'APKG (Anki)' }
 
-function SearchTab({
+function Section({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: LucideIcon
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-[10px] border border-line bg-surface p-4 sm:p-5">
+      <div className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-text-muted">
+        <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+        <h2 className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">{title}</h2>
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function AddSection({
   cardService,
   dictionaryApplication,
   onAdded,
 }: {
   cardService: CardService
   dictionaryApplication?: DictionaryManagementApplication
-  onAdded?: () => void
+  onAdded: () => void
 }) {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<TargetWordData | undefined>(undefined)
@@ -66,7 +84,7 @@ function SearchTab({
     try {
       await cardService.createIfAbsent({ word })
       setAdded(true)
-      onAdded?.()
+      onAdded()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '追加に失敗しました')
     } finally {
@@ -145,7 +163,7 @@ function SearchTab({
   )
 }
 
-function ImportTab({ cardService, onImported }: { cardService: CardService; onImported?: () => void }) {
+function ImportSection({ cardService, onImported }: { cardService: CardService; onImported: () => void }) {
   const [format, setFormat] = useState<ImportFormat>('csv')
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | undefined>(undefined)
@@ -198,7 +216,7 @@ function ImportTab({ cardService, onImported }: { cardService: CardService; onIm
       }
 
       setSummary({ added, skipped })
-      if (added > 0) onImported?.()
+      if (added > 0) onImported()
       if (format === 'csv') setText('')
       setFile(undefined)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -271,7 +289,15 @@ function ImportTab({ cardService, onImported }: { cardService: CardService; onIm
 const ROW_HEIGHT = 44
 const VISIBLE_BUFFER = 6
 
-function ManageTab({ cardService, onChanged }: { cardService: CardService; onChanged?: () => void }) {
+function ListSection({
+  cardService,
+  onChanged,
+  refreshToken,
+}: {
+  cardService: CardService
+  onChanged: () => void
+  refreshToken: number
+}) {
   const [cards, setCards] = useState<Card[]>([])
   const [filter, setFilter] = useState('')
   const [loading, setLoading] = useState(false)
@@ -294,7 +320,7 @@ function ManageTab({ cardService, onChanged }: { cardService: CardService; onCha
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, refreshToken])
 
   const filtered = useMemo(() => {
     const trimmed = filter.trim().toLowerCase()
@@ -311,7 +337,7 @@ function ManageTab({ cardService, onChanged }: { cardService: CardService; onCha
     setDeleting(card.id)
     try {
       await cardService.delete(card.id)
-      onChanged?.()
+      onChanged()
       await load()
     } finally {
       setDeleting(null)
@@ -372,97 +398,56 @@ function ManageTab({ cardService, onChanged }: { cardService: CardService; onCha
   )
 }
 
-export function CardManagerDialog({ open, onClose, cardService, dictionaryApplication }: CardManagerDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const [tab, setTab] = useState<Tab>('add')
+export function CardManagerView({ cardService, dictionaryApplication, onBack, onCardsChanged }: CardManagerViewProps) {
   const titleId = useId().replaceAll(':', '')
-  const tabId = useId().replaceAll(':', '')
+  const [refreshToken, setRefreshToken] = useState(0)
 
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (dialog === null) return
-    if (open && !dialog.open) {
-      dialog.showModal()
-    } else if (!open && dialog.open) {
-      dialog.close()
-    }
-  }, [open])
-
-  const handleClose = useCallback(() => {
-    onClose()
-    setTab('add')
-  }, [onClose])
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'add', label: '追加' },
-    { id: 'import', label: 'Import' },
-    { id: 'manage', label: '単語一覧' },
-  ]
+  const handleChanged = () => {
+    setRefreshToken((token) => token + 1)
+    onCardsChanged?.()
+  }
 
   return (
-    <dialog
-      ref={dialogRef}
-      onCancel={handleClose}
-      onClick={(event) => { if (event.target === dialogRef.current) handleClose() }}
-      className="fixed inset-0 z-50 m-auto max-h-[90vh] w-full max-w-[720px] rounded-[12px] border border-line bg-surface p-0 text-text shadow-[0_24px_64px_rgba(0,0,0,.5)] backdrop:bg-black/60"
-      aria-labelledby={titleId}
-    >
-      <div className="flex max-h-[90vh] flex-col">
-        <div className="flex items-start justify-between gap-4 border-b border-line p-4 sm:p-5">
-          <div>
-            <p className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">カード管理</p>
-            <h2 id={titleId} className="m-0 mt-1 font-serif text-[28px] font-normal leading-tight tracking-[-.035em]">カードを追加・管理</h2>
+    <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby={titleId}>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-text-muted">
+            <List size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>カード管理</span>
           </div>
+          <h1 id={titleId} className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+            カードを追加・管理
+          </h1>
+        </div>
+        {onBack !== undefined && (
           <button
             type="button"
-            onClick={handleClose}
+            onClick={onBack}
             className="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96]"
-            aria-label="閉じる"
+            aria-label="戻る"
           >
-            <X size={19} strokeWidth={1.8} aria-hidden="true" />
+            <ChevronLeft size={19} strokeWidth={1.8} aria-hidden="true" />
           </button>
-        </div>
+        )}
+      </header>
 
-        <div className="border-b border-line p-2">
-          <div className="flex gap-1" role="tablist" aria-label="カード管理タブ">
-            {tabs.map((t) => {
-              const selected = tab === t.id
-              return (
-                <button
-                  key={t.id}
-                  role="tab"
-                  aria-selected={selected}
-                  aria-controls={`${tabId}-${t.id}`}
-                  id={`${tabId}-${t.id}-tab`}
-                  type="button"
-                  onClick={() => setTab(t.id)}
-                  className={`inline-flex h-9 cursor-pointer items-center rounded-[7px] border-0 px-3 text-xs font-semibold transition-[background-color,transform] duration-120 active:scale-[.98] ${selected ? 'bg-accent text-accent-ink' : 'bg-transparent text-text-muted hover:bg-surface-hover hover:text-text'}`}
-                >
-                  {t.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+      {cardService === undefined ? (
+        <p className="mt-8 text-sm text-text-muted">カードサービスを読み込んでいます…</p>
+      ) : (
+        <div className="mt-7 grid gap-5">
+          <Section icon={Search} title="単語を追加">
+            <AddSection cardService={cardService} dictionaryApplication={dictionaryApplication} onAdded={handleChanged} />
+          </Section>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-          {tab === 'add' && (
-            <div role="tabpanel" id={`${tabId}-add`} aria-labelledby={`${tabId}-add-tab`}>
-              <SearchTab cardService={cardService} dictionaryApplication={dictionaryApplication} />
-            </div>
-          )}
-          {tab === 'import' && (
-            <div role="tabpanel" id={`${tabId}-import`} aria-labelledby={`${tabId}-import-tab`}>
-              <ImportTab cardService={cardService} />
-            </div>
-          )}
-          {tab === 'manage' && (
-            <div role="tabpanel" id={`${tabId}-manage`} aria-labelledby={`${tabId}-manage-tab`}>
-              <ManageTab cardService={cardService} />
-            </div>
-          )}
+          <Section icon={Upload} title="Import">
+            <ImportSection cardService={cardService} onImported={handleChanged} />
+          </Section>
+
+          <Section icon={BookOpen} title="単語一覧">
+            <ListSection cardService={cardService} onChanged={handleChanged} refreshToken={refreshToken} />
+          </Section>
         </div>
-      </div>
-    </dialog>
+      )}
+    </main>
   )
 }

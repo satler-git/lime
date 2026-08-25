@@ -1,6 +1,6 @@
 export { AddCardButton } from './AddCardButton'
 export { AppShell } from './AppShell'
-export { CardManagerDialog } from './CardManagerDialog'
+export { CardManagerView } from './CardManagerView'
 export { BatchAddPanel } from './BatchAddPanel'
 export { DictionaryPopover } from './DictionaryPopover'
 export { DictionarySourceManager } from './DictionarySourceManager'

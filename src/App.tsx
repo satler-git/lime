@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppShell } from './components/AppShell'
+import { CardManagerView } from './components/CardManagerView'
 import { ReadingScreen } from './components/ReadingScreen'
 import { SettingsScreen } from './components/SettingsScreen'
 import { TodayOverview } from './components/TodayOverview'
@@ -146,9 +147,8 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           onNewLimitChange={setNewLimit}
           onStartReading={() => navigate('reading')}
           onOpenSettings={() => navigate('settings')}
+          onOpenCards={() => navigate('cards')}
           cardService={cardService}
-          dictionaryApplication={importApplication}
-          onCardsChanged={() => { void loadCards() }}
         />
       )}
       {route === 'reading' && (
@@ -159,6 +159,14 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           cardRepository={cardRepository}
           userId={userId}
           telemetry={telemetry}
+        />
+      )}
+      {route === 'cards' && (
+        <CardManagerView
+          cardService={cardService}
+          dictionaryApplication={importApplication}
+          onBack={() => navigate('today')}
+          onCardsChanged={() => { void loadCards() }}
         />
       )}
       {route === 'settings' && (

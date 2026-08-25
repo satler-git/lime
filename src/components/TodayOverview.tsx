@@ -1,9 +1,6 @@
-import { useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import type { CardService } from '../application/card-service'
-import type { DictionaryManagementApplication } from '../import-service'
 import { AddCardButton } from './AddCardButton'
-import { CardManagerDialog } from './CardManagerDialog'
 import { ReadingProgress } from './ReadingProgress'
 import { StartReadingButton } from './StartReadingButton'
 import { WordCountSummary } from './WordCountSummary'
@@ -30,12 +27,11 @@ type TodayOverviewProps = {
   syncError?: string
   telemetryError?: string
   cardService?: CardService
-  dictionaryApplication?: DictionaryManagementApplication
   onStartReading?: () => void
   onOpenSettings?: () => void
+  onOpenCards?: () => void
   onReviewLimitChange?: (limit: number) => void
   onNewLimitChange?: (limit: number) => void
-  onCardsChanged?: () => void
 }
 
 export function TodayOverview({
@@ -53,14 +49,12 @@ export function TodayOverview({
   syncError,
   telemetryError,
   cardService,
-  dictionaryApplication,
   onStartReading,
   onOpenSettings,
+  onOpenCards,
   onReviewLimitChange,
   onNewLimitChange,
-  onCardsChanged,
 }: TodayOverviewProps) {
-  const [dialogOpen, setDialogOpen] = useState(false)
   return (
     <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby="today-overview-title">
       <header className="flex items-start justify-between gap-4">
@@ -88,18 +82,7 @@ export function TodayOverview({
           onNewLimitChange={onNewLimitChange}
         />
         <StartReadingButton onClick={onStartReading} disabled={isStartButtonDisabled} />
-        <AddCardButton onClick={() => setDialogOpen(true)} disabled={cardService === undefined} />
-        {cardService !== undefined && (
-          <CardManagerDialog
-            open={dialogOpen}
-            onClose={() => {
-              setDialogOpen(false)
-              onCardsChanged?.()
-            }}
-            cardService={cardService}
-            dictionaryApplication={dictionaryApplication}
-          />
-        )}
+        <AddCardButton onClick={onOpenCards} disabled={cardService === undefined || onOpenCards === undefined} />
         <section aria-labelledby="recent-sessions-title">
           <div className="flex items-center justify-between"><h2 id="recent-sessions-title" className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">最近の学習</h2><span className="text-xs text-text-faint">今日</span></div>
           <div className="mt-3 divide-y divide-line border-y border-line">

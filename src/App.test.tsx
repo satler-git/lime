@@ -18,7 +18,7 @@ describe('App routing', () => {
     expect(html).not.toContain('aria-label="タブナビゲーション"')
   })
 
-  it.each(['today' as const, 'reading' as const, 'settings' as const])('renders the %s route', (route) => {
+  it.each(['today' as const, 'reading' as const, 'settings' as const, 'cards' as const])('renders the %s route', (route) => {
     const html = renderToStaticMarkup(<AuthProvider><App initialRoute={route} /></AuthProvider>)
     if (route === 'today') {
       expect(html).toContain('今日の学習')
@@ -26,6 +26,10 @@ describe('App routing', () => {
     } else if (route === 'reading') {
       expect(html).toContain('読解')
       expect(html).toContain('ReadingFlow')
+      expect(html).toContain('aria-label="ホームに戻る"')
+    } else if (route === 'cards') {
+      expect(html).toContain('カードを追加・管理')
+      expect(html).toContain('カード管理')
       expect(html).toContain('aria-label="ホームに戻る"')
     } else {
       expect(html).toContain('設定')
@@ -43,13 +47,14 @@ describe('App routing', () => {
 
 describe('routes', () => {
   it('exposes the valid routes', () => {
-    expect(LIME_ROUTES).toEqual(['today', 'reading', 'settings'])
+    expect(LIME_ROUTES).toEqual(['today', 'reading', 'settings', 'cards'])
   })
 
   it('validates known and unknown route values', () => {
     expect(isLimeRoute('today')).toBe(true)
     expect(isLimeRoute('reading')).toBe(true)
     expect(isLimeRoute('settings')).toBe(true)
+    expect(isLimeRoute('cards')).toBe(true)
     expect(isLimeRoute('home')).toBe(false)
     expect(isLimeRoute(42)).toBe(false)
     expect(isLimeRoute(undefined)).toBe(false)
