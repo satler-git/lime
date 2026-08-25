@@ -5,6 +5,7 @@ export type TodayPlanInput = {
   dueCards: readonly Card[]
   newCards: readonly Card[]
   newLimit: number
+  reviewLimit?: number
   wordsPerCycle?: number
 }
 
@@ -37,9 +38,10 @@ export function createTodayPlan({
   dueCards,
   newCards,
   newLimit,
+  reviewLimit,
   wordsPerCycle = DEFAULT_WORDS_PER_CYCLE,
 }: TodayPlanInput): TodayPlan {
-  const selectedCards = selectWords({ dueCards, newCards, newLimit })
+  const selectedCards = selectWords({ dueCards, newCards, newLimit, reviewLimit })
   return {
     selectedCards,
     cycles: partitionIntoCycles(selectedCards, wordsPerCycle),

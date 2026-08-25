@@ -29,6 +29,18 @@ describe('selectWords', () => {
       .toEqual(['new-first', 'new-second'])
   })
 
+  it('caps due cards when reviewLimit is provided, selecting the earliest due cards first', () => {
+    const dueCards = [
+      card('due-late', new Date('2025-01-03T00:00:00.000Z')),
+      card('due-early', new Date('2024-12-31T00:00:00.000Z')),
+      card('due-mid', new Date('2025-01-02T00:00:00.000Z')),
+    ]
+    const newCards = [card('new-first'), card('new-second')]
+
+    expect(selectWords({ dueCards, newCards, newLimit: 2, reviewLimit: 2 }).map(({ id }) => id))
+      .toEqual(['due-early', 'due-mid', 'new-first', 'new-second'])
+  })
+
   it('removes duplicate IDs deterministically, with due cards taking precedence', () => {
     const dueCards = [
       card('shared', new Date('2025-01-03T00:00:00.000Z')),
@@ -74,6 +86,17 @@ describe('createTodayPlan', () => {
     createTodayPlan({ dueCards, newCards, newLimit: 1, wordsPerCycle: 1 })
 
     expect({ dueCards, newCards }).toEqual(before)
+  })
+
+  it('respects reviewLimit when building the plan', () => {
+    const dueCards = Array.from({ length: 6 }, (_, index) => card(`due-${index}`))
+    const newCards = Array.from({ length: 4 }, (_, index) => card(`new-${index}`))
+    const plan = createTodayPlan({ dueCards, newCards, newLimit: 2, reviewLimit: 3, wordsPerCycle: 2 })
+
+    expect(plan.selectedCards.map(({ id }) => id)).toEqual([
+      'due-0', 'due-1', 'due-2', 'new-0', 'new-1',
+    ])
+    expect(plan.cycles.map((cycle) => cycle.length)).toEqual([2, 2, 1])
   })
 })
 

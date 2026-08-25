@@ -4,6 +4,7 @@ export type WordSelectionInput = {
   dueCards: readonly Card[]
   newCards: readonly Card[]
   newLimit: number
+  reviewLimit?: number
 }
 
 const assertNonNegativeInteger = (value: number, name: string): void => {
@@ -17,8 +18,12 @@ const assertNonNegativeInteger = (value: number, name: string): void => {
  * The first occurrence of a card ID wins, including when a new card also
  * appears in the due-card list.
  */
-export function selectWords({ dueCards, newCards, newLimit }: WordSelectionInput): Card[] {
+export function selectWords({ dueCards, newCards, newLimit, reviewLimit }: WordSelectionInput): Card[] {
   assertNonNegativeInteger(newLimit, 'newLimit')
+
+  if (reviewLimit !== undefined) {
+    assertNonNegativeInteger(reviewLimit, 'reviewLimit')
+  }
 
   const orderedDueCards = dueCards
     .map((card, index) => ({ card, index }))
@@ -28,6 +33,9 @@ export function selectWords({ dueCards, newCards, newLimit }: WordSelectionInput
   const selectedIds = new Set<string>()
 
   for (const { card } of orderedDueCards) {
+    if (reviewLimit !== undefined && selected.length >= reviewLimit) {
+      break
+    }
     if (!selectedIds.has(card.id)) {
       selectedIds.add(card.id)
       selected.push(card)

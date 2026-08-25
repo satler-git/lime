@@ -35,6 +35,10 @@
   button { @apply font-sans text-text; }
   button:focus-visible { @apply outline-2 outline-accent outline-offset-3; }
   button:disabled { @apply cursor-not-allowed opacity-45; }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
 }
 
 @keyframes dictionary-popover-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }

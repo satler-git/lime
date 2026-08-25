@@ -17,16 +17,34 @@ type TodayOverviewProps = {
   totalCycles?: number
   reviewCount?: number
   newCount?: number
+  reviewLimit?: number
+  newLimit?: number
   recentSessions?: RecentSession[]
   onStartReading?: () => void
   onOpenSettings?: () => void
+  onReviewLimitChange?: (limit: number) => void
+  onNewLimitChange?: (limit: number) => void
 }
 
 const defaultRecentSessions: RecentSession[] = [
   { cycle: 1, title: 'A city built around water', words: 15, score: '4 / 5' },
 ]
 
-export function TodayOverview({ todayTarget = 100, todayCompleted = 42, cycle = 2, totalCycles = 7, reviewCount = 72, newCount = 28, recentSessions = defaultRecentSessions, onStartReading, onOpenSettings }: TodayOverviewProps) {
+export function TodayOverview({
+  todayTarget = 100,
+  todayCompleted = 42,
+  cycle = 2,
+  totalCycles = 7,
+  reviewCount = 72,
+  newCount = 28,
+  reviewLimit,
+  newLimit,
+  recentSessions = defaultRecentSessions,
+  onStartReading,
+  onOpenSettings,
+  onReviewLimitChange,
+  onNewLimitChange,
+}: TodayOverviewProps) {
   return (
     <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby="today-overview-title">
       <header className="flex items-start justify-between gap-4">
@@ -38,7 +56,14 @@ export function TodayOverview({ todayTarget = 100, todayCompleted = 42, cycle = 
       </header>
       <div className="mt-9 grid gap-6">
         <ReadingProgress cycle={cycle} totalCycles={totalCycles} todayTarget={todayTarget} todayCompleted={todayCompleted} />
-        <WordCountSummary reviewCount={reviewCount} newCount={newCount} />
+        <WordCountSummary
+          reviewCount={reviewCount}
+          newCount={newCount}
+          reviewLimit={reviewLimit}
+          newLimit={newLimit}
+          onReviewLimitChange={onReviewLimitChange}
+          onNewLimitChange={onNewLimitChange}
+        />
         <StartReadingButton onClick={onStartReading} />
         <section aria-labelledby="recent-sessions-title">
           <div className="flex items-center justify-between"><h2 id="recent-sessions-title" className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">最近の学習</h2><span className="text-xs text-text-faint">今日</span></div>

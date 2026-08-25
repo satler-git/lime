@@ -28,7 +28,7 @@ describe('App routing', () => {
       expect(html).toContain('aria-label="ホームに戻る"')
     } else {
       expect(html).toContain('設定')
-      expect(html).toContain('UI Unit 3')
+      expect(html).toContain('Import')
       expect(html).toContain('aria-label="ホームに戻る"')
     }
   })

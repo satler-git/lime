@@ -1,6 +1,14 @@
 import { BookOpen } from 'lucide-react'
+import type { CycleContentProvider, TextGenerationClient } from '../content'
+import type { TodayPlan } from '../planning/today-plan'
 
-export function ReadingScreen() {
+type ReadingScreenProps = {
+  client?: TextGenerationClient
+  contentProvider?: CycleContentProvider
+  todayPlan?: TodayPlan
+}
+
+export function ReadingScreen({ client, contentProvider, todayPlan }: ReadingScreenProps) {
   return (
     <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby="reading-title">
       <div className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-text-muted">
@@ -13,6 +21,16 @@ export function ReadingScreen() {
       <p className="mt-4 text-sm leading-relaxed text-text-muted">
         この画面には後ほど <strong className="text-text">ReadingFlow</strong> が組み込まれます。
       </p>
+      {todayPlan !== undefined && (
+        <p className="mt-2 text-xs text-text-faint" role="status">
+          今日の計画: {todayPlan.selectedCards.length}語 / {todayPlan.cycles.length}セット
+        </p>
+      )}
+      {client !== undefined && contentProvider !== undefined && (
+        <p className="mt-2 text-xs text-text-faint" role="status">
+          生成クライアント接続済み
+        </p>
+      )}
     </main>
   )
 }

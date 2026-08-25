@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 type WordCountSummaryProps = {
   reviewCount?: number
   newCount?: number
+  reviewLimit?: number
+  newLimit?: number
+  onReviewLimitChange?: (limit: number) => void
+  onNewLimitChange?: (limit: number) => void
 }
 
 type Category = 'review' | 'new'
@@ -21,13 +25,18 @@ const clamp = (value: number, min: number) => Math.max(min, Number.isNaN(value) 
 
 function LimitAdjustModal({ open, title, available, value, onChange, onClose }: AdjustModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const [draft, setDraft] = useState(value)
 
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
-    if (open) dialog.showModal()
-    else if (dialog.open) dialog.close()
-  }, [open])
+    if (open) {
+      setDraft(value)
+      dialog.showModal()
+    } else if (dialog.open) {
+      dialog.close()
+    }
+  }, [open, value])
 
   return (
     <dialog
@@ -45,15 +54,15 @@ function LimitAdjustModal({ open, title, available, value, onChange, onClose }: 
           className="w-20 rounded-[7px] border border-line bg-background px-3 py-2 text-right text-sm text-text focus:border-accent focus:outline-none"
           type="number"
           min={0}
-          value={value}
-          onChange={(event) => onChange(clamp(parseInt(event.target.value, 10), 0))}
+          value={draft}
+          onChange={(event) => setDraft(clamp(parseInt(event.target.value, 10), 0))}
           aria-label="上限を設定"
         />
         <span className="text-xs text-text-faint">語</span>
         <button
           className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] border border-line bg-surface px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96]"
           type="button"
-          onClick={() => onChange(value + 20)}
+          onClick={() => setDraft((current) => current + 20)}
         >
           <Plus size={14} strokeWidth={2} aria-hidden="true" />
           20
@@ -62,7 +71,7 @@ function LimitAdjustModal({ open, title, available, value, onChange, onClose }: 
       <button
         className="mt-5 h-10 w-full cursor-pointer rounded-[7px] border-0 bg-accent text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98]"
         type="button"
-        onClick={onClose}
+        onClick={() => { onChange(draft); onClose() }}
       >
         完了
       </button>
@@ -70,10 +79,33 @@ function LimitAdjustModal({ open, title, available, value, onChange, onClose }: 
   )
 }
 
-export function WordCountSummary({ reviewCount = 72, newCount = 28 }: WordCountSummaryProps) {
-  const [reviewMax, setReviewMax] = useState(Math.min(reviewCount, 50))
-  const [newMax, setNewMax] = useState(Math.min(newCount, 20))
+export function WordCountSummary({
+  reviewCount = 72,
+  newCount = 28,
+  reviewLimit,
+  newLimit,
+  onReviewLimitChange,
+  onNewLimitChange,
+}: WordCountSummaryProps) {
+  const defaultReviewMax = Math.min(reviewCount, 50)
+  const defaultNewMax = Math.min(newCount, 20)
+  const [internalReviewMax, setInternalReviewMax] = useState(clamp(reviewLimit ?? defaultReviewMax, 0))
+  const [internalNewMax, setInternalNewMax] = useState(clamp(newLimit ?? defaultNewMax, 0))
   const [openCategory, setOpenCategory] = useState<Category | null>(null)
+
+  const isReviewControlled = onReviewLimitChange !== undefined
+  const isNewControlled = onNewLimitChange !== undefined
+  const reviewMax = isReviewControlled ? clamp(reviewLimit ?? defaultReviewMax, 0) : internalReviewMax
+  const newMax = isNewControlled ? clamp(newLimit ?? defaultNewMax, 0) : internalNewMax
+
+  const changeReviewMax = (next: number) => {
+    if (isReviewControlled) onReviewLimitChange?.(next)
+    else setInternalReviewMax(next)
+  }
+  const changeNewMax = (next: number) => {
+    if (isNewControlled) onNewLimitChange?.(next)
+    else setInternalNewMax(next)
+  }
 
   const studyCount = (count: number, max: number) => Math.min(count, max)
 
@@ -119,7 +151,7 @@ export function WordCountSummary({ reviewCount = 72, newCount = 28 }: WordCountS
         title="復習の上限"
         available={reviewCount}
         value={reviewMax}
-        onChange={setReviewMax}
+        onChange={changeReviewMax}
         onClose={() => setOpenCategory(null)}
       />
       <LimitAdjustModal
@@ -127,7 +159,7 @@ export function WordCountSummary({ reviewCount = 72, newCount = 28 }: WordCountS
         title="新出の上限"
         available={newCount}
         value={newMax}
-        onChange={setNewMax}
+        onChange={changeNewMax}
         onClose={() => setOpenCategory(null)}
       />
     </section>
