@@ -120,9 +120,9 @@ const assertCanTransition = (session: ReadingSession, expected: SessionStatus, n
   }
 }
 
-const assertReading = (session: ReadingSession): void => {
-  if (session.status !== 'reading') {
-    throw new SessionTransitionError(`Cannot record a lookup in a ${session.status} session; session must be reading`)
+const assertLookupAllowed = (session: ReadingSession): void => {
+  if (session.status !== 'reading' && session.status !== 'quiz') {
+    throw new SessionTransitionError(`Cannot record a lookup in a ${session.status} session; session must be reading or quiz`)
   }
 }
 
@@ -185,7 +185,7 @@ export class ReadingSessionService {
   }
 
   recordLookup(session: ReadingSession, input: RecordLookupInput): ReadingSession {
-    assertReading(session)
+    assertLookupAllowed(session)
     validateLookupInput(input)
     const word = input.word.trim()
     const timestamp = copyDate(input.timestamp ?? this.clock())

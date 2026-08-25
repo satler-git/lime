@@ -6,7 +6,7 @@ type DictionaryWordProps = {
   kind?: WordKind
   entry?: boolean
   active?: boolean
-  onOpen?: (anchor: WordAnchor) => void
+  onOpen?: (anchor: WordAnchor, opener: HTMLElement) => void
 }
 
 function getAnchor(element: HTMLElement): WordAnchor {
@@ -15,7 +15,7 @@ function getAnchor(element: HTMLElement): WordAnchor {
 }
 
 export function DictionaryWord({ children, kind, entry = false, active = false, onOpen }: DictionaryWordProps) {
-  const open = (element: HTMLElement) => onOpen?.(getAnchor(element))
+  const open = (element: HTMLElement) => onOpen?.(getAnchor(element), element)
   const handleDoubleClick = (event: MouseEvent<HTMLButtonElement>) => open(event.currentTarget)
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -31,7 +31,7 @@ export function DictionaryWord({ children, kind, entry = false, active = false, 
     <button
       className={`relative inline cursor-default border-0 bg-transparent px-px font-[inherit] ${kindClass} ${entryClass} ${activeClass} hover:rounded-sm hover:bg-[rgba(194,230,111,.18)] hover:text-text`}
       type="button"
-      aria-label={`${children}。ダブルクリックで辞書を開く`}
+      aria-label={`${children}。ダブルクリック、Enter/Space で辞書を開く`}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
     >

@@ -197,7 +197,7 @@ export class LearningSessionService {
   recordLookup(sessionId: string, input: RecordLookupInput): Promise<ReadingSession> {
     return this.enqueueSessionMutation(sessionId, async () => {
       const session = await this.loadSession(sessionId)
-      this.assertStatus(session, 'reading', 'record a dictionary lookup')
+      this.assertStatusOneOf(session, ['reading', 'quiz'], 'record a dictionary lookup')
       const next = this.readingSessions.recordLookup(session, input)
       await this.sessions.save(next)
       return next
@@ -208,7 +208,7 @@ export class LearningSessionService {
   lookup(sessionId: string, input: RecordLookupInput): Promise<DictionaryResolverSnapshot> {
     return this.enqueueSessionMutation(sessionId, async () => {
       const session = await this.loadSession(sessionId)
-      this.assertStatus(session, 'reading', 'look up a dictionary word')
+      this.assertStatusOneOf(session, ['reading', 'quiz'], 'look up a dictionary word')
       validateLookupInput(input)
       if (this.dictionary === undefined) {
         throw new SessionOrchestrationError('A DictionaryResolver provider is required for lookup')
@@ -388,6 +388,18 @@ export class LearningSessionService {
     if (session.status !== expected) {
       throw new SessionOrchestrationError(
         `Cannot ${operation} in a ${session.status} session; session must be ${expected}`,
+      )
+    }
+  }
+
+  private assertStatusOneOf(
+    session: ReadingSession,
+    expected: readonly ReadingSession['status'][],
+    operation: string,
+  ): void {
+    if (!expected.includes(session.status)) {
+      throw new SessionOrchestrationError(
+        `Cannot ${operation} in a ${session.status} session; session must be ${expected.join(' or ')}`,
       )
     }
   }

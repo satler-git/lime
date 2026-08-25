@@ -7,6 +7,8 @@ type DictionaryTextProps = {
   entry?: string
   targetWords?: Record<string, WordKind>
   onOpen?: (word: string, anchor: WordAnchor) => void
+  /** Also reports the character offset needed by a session lookup port. */
+  onOpenAt?: (word: string, anchor: WordAnchor, character: number, opener?: HTMLElement) => void
 }
 
 const wordPattern = /[A-Za-z]+(?:['’-][A-Za-z]+)*/g
@@ -15,7 +17,7 @@ function normalize(word: string) {
   return word.toLocaleLowerCase().replaceAll('’', "'")
 }
 
-export function DictionaryText({ text, entry, targetWords = {}, onOpen }: DictionaryTextProps) {
+export function DictionaryText({ text, entry, targetWords = {}, onOpen, onOpenAt }: DictionaryTextProps) {
   const parts: ReactNode[] = []
   let cursor = 0
   const normalizedEntry = entry ? normalize(entry) : undefined
@@ -30,7 +32,11 @@ export function DictionaryText({ text, entry, targetWords = {}, onOpen }: Dictio
         key={`${index}-${token}`}
         kind={targetWords[normalizedToken]}
         entry={normalizedToken === normalizedEntry}
-        onOpen={(anchor) => onOpen?.(token, anchor)}
+        onOpen={(anchor, opener) => {
+          onOpen?.(token, anchor)
+          if (opener) onOpenAt?.(token, anchor, index, opener)
+          else onOpenAt?.(token, anchor, index)
+        }}
       >
         {token}
       </DictionaryWord>,

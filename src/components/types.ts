@@ -15,5 +15,5 @@ export type TargetWordData = {
   partOfSpeech: string
   definition: string
   examples: ReactNode[]
-  inSrs?: boolean
+  inSrs: boolean
 }

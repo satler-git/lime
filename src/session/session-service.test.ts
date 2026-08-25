@@ -117,11 +117,11 @@ describe('dictionary lookup events', () => {
     const abandoned = service.abandon(created, completeTime)
 
     expect(() => service.recordLookup(created, input)).toThrowError(SessionTransitionError)
-    expect(() => service.recordLookup(quiz, input)).toThrowError(SessionTransitionError)
+    expect(service.recordLookup(quiz, input).lookupEvents).toHaveLength(1)
     expect(() => service.recordLookup(completed, input)).toThrowError(SessionTransitionError)
     expect(() => service.recordLookup(abandoned, input)).toThrowError(SessionTransitionError)
     expect(() => service.recordLookup(created, input)).toThrowError(
-      'Cannot record a lookup in a created session; session must be reading',
+      'Cannot record a lookup in a created session; session must be reading or quiz',
     )
     expect(service.recordLookup(reading, input).lookupEvents).toHaveLength(1)
   })

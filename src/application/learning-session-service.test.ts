@@ -190,6 +190,14 @@ describe('LearningSessionService', () => {
     const session = await app.startPlannedCycle({ selectedCards: [card], cycles: [[card]] })
     const quiz = await app.transitionToQuiz(session.id)
     expect(quiz.session.status).toBe('quiz')
+    const quizLookup = await app.lookup(session.id, {
+      word: 'quiz-word', source: 'article', position: { paragraph: 0, character: 2 }, inSrs: false,
+    })
+    expect(quizLookup.session.status).toBe('quiz')
+    expect(quizLookup.session.lookupEvents).toHaveLength(1)
+    await expect(app.recordLookup(session.id, {
+      word: 'quiz-example', source: 'example', position: { paragraph: 0, character: 4 }, inSrs: false,
+    })).resolves.toMatchObject({ status: 'quiz' })
 
     let current = quiz
     for (const question of makeQuestions()) {
