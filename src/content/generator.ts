@@ -1,15 +1,16 @@
 import { parseGeneratedJson } from './parser'
 import { buildGenerationPrompt } from './prompt'
 import type { CycleContent, GenerationSpec, TextGenerationClient } from './types'
-import { validateCycleContent } from './validation'
+import { validateCycleContent, validateGenerationSpec } from './validation'
 
 /** Compose prompt creation, provider invocation, JSON parsing, and validation. */
 export async function generateCycleContent(
   spec: GenerationSpec,
   client: TextGenerationClient,
 ): Promise<CycleContent> {
-  const raw = await client.generate(buildGenerationPrompt(spec))
-  return validateCycleContent(parseGeneratedJson(raw), spec)
+  const validatedSpec = validateGenerationSpec(spec)
+  const raw = await client.generate(buildGenerationPrompt(validatedSpec))
+  return validateCycleContent(parseGeneratedJson(raw), validatedSpec)
 }
 
 export class CycleContentGenerator {

@@ -1,4 +1,5 @@
 import type { Card } from '../domain/card'
+import { deriveSeedFromSpec } from './question-format'
 import { generateCycleContent } from './generator'
 import type { CycleContent, GenerationSpec, TextGenerationClient } from './types'
 import { ContentValidationError, validateCycleContent, validateGenerationSpec } from './validation'
@@ -16,7 +17,7 @@ export type GenerationContextFactory = (cards: readonly Card[]) => GenerationCon
 export type TargetWordsFactory = (cards: readonly Card[]) => readonly string[]
 
 /** A pure mapping from a cycle and caller-owned context to a generation request. */
-export type GenerationSpecFactory = (cards: readonly Card[]) => GenerationSpec
+export type GenerationSpecFactory = (cards: readonly Card[], seed?: string) => GenerationSpec
 
 export type ThemeGenerationSpecFactoryConfig = {
   themeSelector: ThemeSelector
@@ -51,7 +52,7 @@ const isContextConfig = (
 export function createGenerationSpecFactory(config: GenerationSpecFactoryConfig): GenerationSpecFactory {
   const targetWords = config.targetWords ?? defaultTargetWords
 
-  return (cards) => {
+  return (cards, seed) => {
     const context = isContextConfig(config)
       ? typeof config.context === 'function' ? config.context(cards) : config.context
       : {
@@ -59,12 +60,19 @@ export function createGenerationSpecFactory(config: GenerationSpecFactoryConfig)
           style: config.style ?? DEFAULT_GENERATION_STYLE,
           articleWordTarget: config.articleWordTarget ?? DEFAULT_ARTICLE_WORD_TARGET,
         }
+    const words = [...targetWords(cards)]
 
     return validateGenerationSpec({
-      targetWords: [...targetWords(cards)],
+      targetWords: words,
       theme: context.theme,
       style: context.style,
       articleWordTarget: context.articleWordTarget,
+      seed: seed ?? deriveSeedFromSpec({
+        targetWords: words,
+        theme: context.theme,
+        style: context.style,
+        articleWordTarget: context.articleWordTarget,
+      }),
     })
   }
 }
@@ -151,6 +159,7 @@ export function createCycleContentCacheKey(
     theme: validated.theme,
     style: validated.style,
     articleWordTarget: validated.articleWordTarget,
+    seed: validated.seed,
   })
 }
 
@@ -189,8 +198,8 @@ export class CycleContentProvider {
     this.cacheNamespace = validateCacheNamespace(configuredNamespace)
   }
 
-  async getContent(cards: readonly Card[]): Promise<CycleContent> {
-    const spec = validateGenerationSpec(this.specFactory(cards))
+  async getContent(cards: readonly Card[], seed?: string): Promise<CycleContent> {
+    const spec = validateGenerationSpec(this.specFactory(cards, seed))
     const cacheKey = createCycleContentCacheKey(spec, this.cacheNamespace)
     const cached = this.cache?.get(cacheKey)
     if (cached !== undefined) {

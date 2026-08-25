@@ -3,12 +3,17 @@ export type QuizOption = {
   text: string
 }
 
+export type QuizQuestionFormat = 'ja' | 'en' | 'reasoning'
+
+export const QUIZ_QUESTION_FORMATS: readonly QuizQuestionFormat[] = ['ja', 'en', 'reasoning']
+
 export type QuizQuestion = {
   id: string
   prompt: string
   options: QuizOption[]
   correctOptionId: string
   relatedWords: string[]
+  format: QuizQuestionFormat
 }
 
 export type QuizAnswer = {

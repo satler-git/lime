@@ -11,6 +11,8 @@ export type GenerationSpec = {
   theme: string
   style: string
   articleWordTarget: number
+  /** Stable cycle identifier used for reproducible question-format assignment. */
+  seed?: string
 }
 
 /** A provider-neutral text generation port. */

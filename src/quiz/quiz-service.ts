@@ -1,10 +1,12 @@
-import type {
-  QuizAnswer,
-  QuizClock,
-  QuizProgress,
-  QuizQuestion,
-  QuizServiceOptions,
-  QuizState,
+import {
+  QUIZ_QUESTION_FORMATS,
+  type QuizAnswer,
+  type QuizClock,
+  type QuizProgress,
+  type QuizQuestion,
+  type QuizQuestionFormat,
+  type QuizServiceOptions,
+  type QuizState,
 } from './types'
 
 export class QuizValidationError extends Error {
@@ -73,6 +75,9 @@ const validateQuestion = (question: QuizQuestion, index: number): QuizQuestion =
   ) {
     throw new QuizValidationError(`Question ${question.id} relatedWords must be a non-empty array of strings`)
   }
+  if (typeof question.format !== 'string' || !QUIZ_QUESTION_FORMATS.includes(question.format as QuizQuestionFormat)) {
+    throw new QuizValidationError(`Question ${question.id} format must be one of ${QUIZ_QUESTION_FORMATS.join(', ')}`)
+  }
 
   return {
     id: question.id,
@@ -80,6 +85,7 @@ const validateQuestion = (question: QuizQuestion, index: number): QuizQuestion =
     options: question.options.map((option) => ({ id: option.id, text: option.text })),
     correctOptionId: question.correctOptionId,
     relatedWords: [...question.relatedWords],
+    format: question.format,
   }
 }
 
@@ -88,7 +94,7 @@ const validateQuestions = (questions: readonly QuizQuestion[]): QuizQuestion[] =
     throw new QuizValidationError(`A quiz must contain exactly ${QUESTION_COUNT} questions`)
   }
   const ids = new Set<string>()
-  return questions.map((question, index) => {
+  const validatedQuestions = questions.map((question, index) => {
     const validated = validateQuestion(question, index)
     if (ids.has(validated.id)) {
       throw new QuizValidationError(`Question IDs must be unique: ${validated.id}`)
@@ -96,6 +102,11 @@ const validateQuestions = (questions: readonly QuizQuestion[]): QuizQuestion[] =
     ids.add(validated.id)
     return validated
   })
+  const formats = new Set(validatedQuestions.map((question) => question.format))
+  if (formats.size < 2) {
+    throw new QuizValidationError('A quiz must contain at least two distinct question formats')
+  }
+  return validatedQuestions
 }
 
 const copyAnswer = (answer: QuizAnswer): QuizAnswer => ({

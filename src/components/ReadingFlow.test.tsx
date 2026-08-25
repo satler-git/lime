@@ -23,6 +23,7 @@ const questions: QuizQuestion[] = Array.from({ length: 5 }, (_, index) => ({
   ],
   correctOptionId: 'a',
   relatedWords: ['river'],
+  format: index % 3 === 0 ? 'ja' : index % 3 === 1 ? 'en' : 'reasoning',
 }))
 
 const content = {

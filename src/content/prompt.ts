@@ -1,3 +1,4 @@
+import { formatAssignmentText } from './question-format'
 import type { GenerationSpec } from './types'
 import { validateGenerationSpec } from './validation'
 
@@ -23,11 +24,17 @@ export function buildGenerationPrompt(spec: GenerationSpec): string {
     '      "prompt": "...",',
     '      "options": [{"id": "a", "text": "..."}, {"id": "b", "text": "..."}, {"id": "c", "text": "..."}, {"id": "d", "text": "..."}],',
     '      "correctOptionId": "a",',
-    '      "relatedWords": ["target word"]',
+    '      "relatedWords": ["target word"],',
+    '      "format": "ja"',
     '    }',
     '  ]',
     '}',
     'Write exactly five contextual multiple-choice questions about the article.',
     'Each question must have exactly four different options, exactly one correctOptionId that matches an option id, and a non-empty relatedWords array.',
+    'Each question must also have a "format" field with one of: "ja" (Japanese prompt and Japanese options), "en" (English prompt and English options), or "reasoning" (a question that asks the reader to infer, summarize, or explain).',
+    '',
+    formatAssignmentText(validated.seed),
+    '',
+    'Use the format assignment above for each question id. Do not put all five questions in the same format, and do not show relatedWords to the learner in the question text.',
   ].join('\n')
 }

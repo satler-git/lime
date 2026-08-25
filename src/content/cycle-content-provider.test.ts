@@ -7,25 +7,31 @@ import {
   createCycleContentCacheKey,
   createGenerationSpecFactory,
 } from './index'
+import { deriveSeedFromSpec, determineQuestionFormats } from './question-format'
 import { createCard } from '../domain/card'
 import type { Card } from '../domain/card'
 import type { CycleContent, TextGenerationClient } from './types'
 
-const makeContent = (words: readonly string[]): CycleContent => ({
-  article: `A cycle about ${words.join(' and ')}.`,
-  questions: Array.from({ length: 5 }, (_, index) => ({
-    id: `question-${index + 1}`,
-    prompt: `What is discussed in part ${index + 1}?`,
-    options: [
-      { id: 'a', text: `Answer ${index + 1}` },
-      { id: 'b', text: `Alternative ${index + 1}` },
-      { id: 'c', text: `Another ${index + 1}` },
-      { id: 'd', text: `Last ${index + 1}` },
-    ],
-    correctOptionId: 'a',
-    relatedWords: [words[0] ?? 'cycle'],
-  })),
-})
+const makeContent = (words: readonly string[], specContext = context): CycleContent => {
+  const seed = deriveSeedFromSpec({ targetWords: [...words], ...specContext })
+  const formats = determineQuestionFormats(seed)
+  return {
+    article: `A cycle about ${words.join(' and ')}.`,
+    questions: Array.from({ length: 5 }, (_, index) => ({
+      id: `question-${index + 1}`,
+      prompt: `What is discussed in part ${index + 1}?`,
+      options: [
+        { id: 'a', text: `Answer ${index + 1}` },
+        { id: 'b', text: `Alternative ${index + 1}` },
+        { id: 'c', text: `Another ${index + 1}` },
+        { id: 'd', text: `Last ${index + 1}` },
+      ],
+      correctOptionId: 'a',
+      relatedWords: [words[0] ?? 'cycle'],
+      format: formats[index],
+    })),
+  }
+}
 
 const cards = (words: readonly string[]): Card[] => words.map((word, index) => (
   createCard({ id: `card-${index}`, word, now: new Date('2025-01-01T00:00:00.000Z') })
@@ -39,9 +45,9 @@ const context = {
 
 const testCacheNamespace = 'cycle-content-test'
 
-const makeClient = (content: CycleContent) => {
+const makeClient = (content: CycleContent | (() => CycleContent)) => {
   const client: TextGenerationClient = {
-    generate: vi.fn(async () => JSON.stringify(content)),
+    generate: vi.fn(async () => JSON.stringify(typeof content === 'function' ? content() : content)),
   }
   return client
 }
@@ -61,6 +67,12 @@ describe('GenerationSpecFactory', () => {
       theme: 'Public spaces',
       style: 'narrative prose',
       articleWordTarget: 240,
+      seed: deriveSeedFromSpec({
+        targetWords: ['resilient', 'civic'],
+        theme: 'Public spaces',
+        style: 'narrative prose',
+        articleWordTarget: 240,
+      }),
     })
     expect(selectTheme).toHaveBeenCalledWith(cycle)
   })
@@ -74,12 +86,25 @@ describe('GenerationSpecFactory', () => {
       theme: 'Public spaces',
       style: 'clear magazine prose',
       articleWordTarget: 500,
+      seed: deriveSeedFromSpec({
+        targetWords: ['resilient'],
+        theme: 'Public spaces',
+        style: 'clear magazine prose',
+        articleWordTarget: 500,
+      }),
     })
 
     const contextFactory = createGenerationSpecFactory({
       context: () => context,
     })
-    expect(contextFactory(cycle)).toEqual({ targetWords: ['resilient'], ...context })
+    expect(contextFactory(cycle)).toEqual({
+      targetWords: ['resilient'],
+      ...context,
+      seed: deriveSeedFromSpec({
+        targetWords: ['resilient'],
+        ...context,
+      }),
+    })
   })
 
   it('does not permit missing or invalid caller context to reach generation', () => {
@@ -264,7 +289,7 @@ describe('CycleContentProvider', () => {
 
   it('separates cache entries when generation context changes', async () => {
     const cycle = cards(['resilient'])
-    const client = makeClient(makeContent(['resilient']))
+    const client = makeClient(() => makeContent(['resilient'], selectedContext))
     const cache = new InMemoryCycleContentCache()
     let selectedContext = context
     const provider = new CycleContentProvider(

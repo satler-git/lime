@@ -22,6 +22,7 @@ const makeQuestions = (): QuizQuestion[] => Array.from({ length: 5 }, (_, index)
   ],
   correctOptionId: index % 2 === 0 ? 'a' : 'b',
   relatedWords: [`word-${index + 1}`, ...(index === 2 ? ['shared-word'] : [])],
+  format: index % 3 === 0 ? 'ja' : index % 3 === 1 ? 'en' : 'reasoning',
 }))
 
 const initialTime = new Date('2025-04-01T12:00:00.000Z')

@@ -1,5 +1,6 @@
-import type { QuizOption, QuizQuestion } from '../quiz/types'
+import type { QuizOption, QuizQuestion, QuizQuestionFormat } from '../quiz/types'
 import type { CycleContent, GenerationSpec } from './types'
+import { QUIZ_QUESTION_FORMATS, deriveSeedFromSpec, determineQuestionFormats } from './question-format'
 
 const QUESTION_COUNT = 5
 const OPTION_COUNT = 4
@@ -36,7 +37,7 @@ const requireNonEmptyString = (value: unknown, name: string): string => {
 }
 
 /** Validate and copy a generation request before it reaches a provider. */
-export function validateGenerationSpec(spec: unknown): GenerationSpec {
+export function validateGenerationSpec(spec: unknown): Required<GenerationSpec> {
   if (!isRecord(spec)) throw new ContentValidationError('Generation spec must be an object')
   if (!Array.isArray(spec.targetWords) || spec.targetWords.length === 0) {
     throw new ContentValidationError('Generation spec must contain at least one target word')
@@ -51,7 +52,16 @@ export function validateGenerationSpec(spec: unknown): GenerationSpec {
   if (!Number.isInteger(spec.articleWordTarget) || (spec.articleWordTarget as number) < 1) {
     throw new ContentValidationError('articleWordTarget must be a positive integer')
   }
-  return { targetWords, theme, style, articleWordTarget: spec.articleWordTarget as number }
+  const base: Pick<GenerationSpec, 'targetWords' | 'theme' | 'style' | 'articleWordTarget'> = {
+    targetWords,
+    theme,
+    style,
+    articleWordTarget: spec.articleWordTarget as number,
+  }
+  const seed = spec.seed === undefined
+    ? deriveSeedFromSpec(base)
+    : requireNonEmptyString(spec.seed, 'seed').trim()
+  return { ...base, seed }
 }
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -104,8 +114,12 @@ export function validateQuizQuestion(question: unknown, index: number): QuizQues
   const relatedWords = question.relatedWords.map((word, relatedIndex) => (
     requireNonEmptyString(word, `Question ${id} relatedWords[${relatedIndex}]`).trim()
   ))
+  const format = requireNonEmptyString(question.format, `Question ${id} format`).trim() as QuizQuestionFormat
+  if (!QUIZ_QUESTION_FORMATS.includes(format)) {
+    throw new ContentValidationError(`Question ${id} format must be one of ${QUIZ_QUESTION_FORMATS.join(', ')}`)
+  }
 
-  return { id, prompt, options, correctOptionId, relatedWords }
+  return { id, prompt, options, correctOptionId, relatedWords, format }
 }
 
 /** Validate and defensively copy model output against the requested generation spec. */
@@ -121,6 +135,17 @@ export function validateCycleContent(content: unknown, spec: GenerationSpec): Cy
   for (const question of questions) {
     if (questionIds.has(question.id)) throw new ContentValidationError(`Question IDs must be unique: ${question.id}`)
     questionIds.add(question.id)
+  }
+
+  const expectedFormats = determineQuestionFormats(validatedSpec.seed)
+  for (let index = 0; index < QUESTION_COUNT; index += 1) {
+    const question = questions[index]
+    const expected = expectedFormats[index]
+    if (question.format !== expected) {
+      throw new ContentValidationError(
+        `Question ${question.id} format must be "${expected}" for the seeded assignment (expected order: ${expectedFormats.join(', ')})`,
+      )
+    }
   }
 
   const missingWords = validatedSpec.targetWords.filter((word) => !containsNormalizedWord(article, word))

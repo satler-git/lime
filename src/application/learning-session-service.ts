@@ -29,7 +29,7 @@ import { validateLookupInput } from '../session/session-service'
 
 /** Provider for the article and quiz content belonging to a planned cycle. */
 export interface ContentProvider {
-  getContent(cycle: readonly Card[]): Promise<CycleContent>
+  getContent(cycle: readonly Card[], seed?: string): Promise<CycleContent>
 }
 
 /** Result returned by an injected dictionary resolver. */
@@ -259,7 +259,7 @@ export class LearningSessionService {
     if (this.content === undefined) {
       throw new SessionOrchestrationError('A ContentProvider is required to fetch cycle content')
     }
-    return this.content.getContent(cycle.map(cloneCard))
+    return this.content.getContent(cycle.map(cloneCard), session.id)
   }
 
   /** Move a reading session to quiz after durably creating its quiz state. */

@@ -9,6 +9,7 @@ import {
   parseGeneratedJson,
   validateCycleContent,
 } from './index'
+import { deriveSeedFromSpec, determineQuestionFormats } from './question-format'
 import { createQuizState } from '../quiz'
 import type { CycleContent, GenerationSpec, TextGenerationClient } from './types'
 
@@ -18,6 +19,8 @@ const spec: GenerationSpec = {
   style: 'clear magazine prose',
   articleWordTarget: 180,
 }
+
+const questionFormats = determineQuestionFormats(deriveSeedFromSpec(spec))
 
 const content: CycleContent = {
   article: 'A RESILIENT city supports a learner’s curiosity with state‑of‑the‑art public spaces.',
@@ -32,6 +35,7 @@ const content: CycleContent = {
     ],
     correctOptionId: 'a',
     relatedWords: ['resilient'],
+    format: questionFormats[index],
   })),
 }
 

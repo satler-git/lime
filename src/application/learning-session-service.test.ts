@@ -16,6 +16,7 @@ import type { CardRepository } from '../repositories/card-repository'
 import {
   CycleContentProvider,
   createGenerationSpecFactory,
+  determineQuestionFormats,
   type CycleContent,
 } from '../content'
 import type { QuizQuestion, QuizState, QuizStateRepository } from '../quiz'
@@ -104,6 +105,7 @@ const makeQuestions = (): QuizQuestion[] => Array.from({ length: 5 }, (_, index)
   ],
   correctOptionId: 'correct',
   relatedWords: [`related-${index}`],
+  format: index % 3 === 0 ? 'ja' : index % 3 === 1 ? 'en' : 'reasoning',
 }))
 
 const makeApplication = (
@@ -497,7 +499,7 @@ describe('LearningSessionService', () => {
   })
 
   it('transitions to quiz through CycleContentProvider when content is omitted', async () => {
-    const generated = { article: 'A resilient article.', questions: makeQuestions() }
+    let generated: CycleContent | undefined
     const client = {
       generate: vi.fn(async () => JSON.stringify(generated)),
     }
@@ -513,6 +515,11 @@ describe('LearningSessionService', () => {
     const { app, cardService, quizStateRepository } = makeApplication(false, { contentProvider: provider })
     const card = await cardService.create({ id: 'provider-port', word: 'resilient', now: time })
     const session = await app.startCycle([card])
+    const formats = determineQuestionFormats(session.id)
+    generated = { article: 'A resilient article.', questions: makeQuestions() }
+    generated.questions.forEach((question, index) => {
+      question.format = formats[index]
+    })
 
     const transitioned = await app.transitionToQuiz(session.id)
     expect(transitioned.session.status).toBe('quiz')
