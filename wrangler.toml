@@ -2,6 +2,11 @@ name = "lime-auth"
 main = "src/worker/index.ts"
 compatibility_date = "2025-01-01"
 
+[vars]
+APP_URL = "https://example.test"
+GOOGLE_CLIENT_ID = "replace-with-client-id"
+GOOGLE_CLIENT_SECRET = "replace-with-client-secret"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "lime-auth"

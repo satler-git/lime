@@ -1,4 +1,4 @@
-import { hasControlCharacters, hasUserinfoSyntax, parseExpectedOrigin } from '../worker/origin'
+import { parseExpectedOrigin, resolveEndpoint } from '../worker/origin'
 import { cancelResponseBody } from '../response'
 import {
   MAX_SYNC_ITEMS_PER_TYPE,
@@ -83,50 +83,13 @@ const expectedOriginFor = (explicitOrigin: string | undefined): string | undefin
 }
 
 const endpointFor = (baseUrl: string | undefined, expectedOrigin: string | undefined): string => {
-  const value = baseUrl ?? ''
-  if (value.length === 0) return '/api/sync'
-
-  // Reject characters that URL parsing may normalize before construction.
-  if (hasControlCharacters(value)) {
-    throw new TypeError('Control characters in sync base URLs are not supported')
-  }
-  if (/\s/.test(value)) {
-    throw new TypeError('Whitespace in sync base URLs is not supported')
-  }
-  // WHATWG URL parsing accepts backslashes as alternate slash syntax. Reject them
-  // before construction so they cannot turn a seemingly relative value into a URL.
-  if (value.includes('\\')) {
-    throw new TypeError('Backslashes in sync base URLs are not supported')
-  }
-  if (value.startsWith('//')) {
-    throw new TypeError('Protocol-relative sync base URLs are not supported')
-  }
-
-  let resolvedBase: URL
-  try {
-    resolvedBase = new URL(value)
-  } catch {
-    // Relative paths are useful in browser tests and deployments behind a path prefix.
-    if (value.startsWith('/')) {
-      if (value.includes('?') || value.includes('#') || /\s/.test(value)) {
-        throw new TypeError('Relative sync base URLs must not contain query, fragment, or whitespace')
-      }
-      return `${value.replace(/\/+$/, '')}/api/sync`
-    }
-    throw new TypeError('A valid sync base URL is required')
-  }
-
-  if (hasUserinfoSyntax(value) || resolvedBase.username.length > 0 || resolvedBase.password.length > 0) {
-    throw new TypeError('Sync base URLs must not contain credentials')
-  }
-  if (expectedOrigin === undefined) {
+  const value = (baseUrl ?? '').trim()
+  // For absolute base URLs, an explicit origin is required so the client can
+  // enforce the same-origin policy before any network request is made.
+  if (value.length > 0 && !value.startsWith('/') && expectedOrigin === undefined) {
     throw new TypeError('An expected origin is required for an absolute sync base URL')
   }
-  if (resolvedBase.origin !== expectedOrigin) {
-    throw new TypeError('Sync base URL must be same-origin')
-  }
-
-  return new URL('/api/sync', resolvedBase).toString()
+  return resolveEndpoint(baseUrl, '/api/sync', { expectedOrigin, label: 'sync' })
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

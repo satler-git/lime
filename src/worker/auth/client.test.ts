@@ -201,23 +201,18 @@ describe('AuthClient', () => {
     expect(serializeErrorGraph(error)).not.toContain(secret)
   })
 
-  it('logs out with a same-origin no-store POST and accepts 204 or a validated JSON object', async () => {
+  it('logs out with a same-origin no-store POST and only accepts 204', async () => {
     const fetcher = vi.fn<AuthFetch>()
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(jsonResponse({ success: true, ignored: 'field' }))
     const client = new AuthClient({ fetch: fetcher })
 
-    await expect(client.logout()).resolves.toBeUndefined()
     await expect(client.logout()).resolves.toBeUndefined()
     expect(fetcher).toHaveBeenNthCalledWith(1, '/auth/logout', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
-    })
-    expect(fetcher).toHaveBeenNthCalledWith(2, '/auth/logout', {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
     })
   })
 

@@ -69,3 +69,75 @@ export const parseExpectedOrigin = (value: string): string => {
   if (origin === null) throw new TypeError('A valid same-origin origin is required')
   return origin
 }
+
+export type ResolveEndpointOptions = {
+  /** Expected origin for absolute base URLs. When provided, the resolved origin must match it. */
+  expectedOrigin?: string
+  /** Human-readable client name included in validation error messages. */
+  label?: string
+}
+
+const labelPart = (label: string | undefined, capitalize = false): string => {
+  if (label === undefined) return ''
+  const value = label.trim()
+  if (value.length === 0) return ''
+  if (capitalize) return `${value[0].toUpperCase()}${value.slice(1)} `
+  return `${value} `
+}
+
+/**
+ * Resolve a same-origin or relative base URL into an endpoint path.
+ * For an absolute base URL, the resolved origin is checked against `expectedOrigin`
+ * when one is supplied. All callers share the same normalization rules:
+ * trailing slashes are stripped from the base, and the path is appended.
+ */
+export const resolveEndpoint = (
+  baseUrl: string | undefined,
+  path: string,
+  { expectedOrigin, label }: ResolveEndpointOptions = {},
+): string => {
+  const value = (baseUrl ?? '').trim()
+  if (value.length === 0) return path
+
+  if (hasControlCharacters(value)) {
+    throw new TypeError(`Control characters in ${labelPart(label)}base URLs are not supported`)
+  }
+  if (/\s/.test(value)) {
+    throw new TypeError(`Whitespace in ${labelPart(label)}base URLs are not supported`)
+  }
+  if (value.includes('\\')) {
+    throw new TypeError(`Backslashes in ${labelPart(label)}base URLs are not supported`)
+  }
+  if (value.startsWith('//')) {
+    throw new TypeError(`Protocol-relative ${labelPart(label)}base URLs are not supported`)
+  }
+
+  if (value.startsWith('/')) {
+    if (value.includes('?') || value.includes('#')) {
+      throw new TypeError(`Relative ${labelPart(label)}base URLs must not contain a query or fragment`)
+    }
+    return `${value.replace(/\/+$/, '')}${path}`
+  }
+
+  let resolved: URL
+  try {
+    resolved = new URL(value)
+  } catch {
+    throw new TypeError(`A valid ${labelPart(label)}base URL is required`)
+  }
+
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+    throw new TypeError(`Only http: and https: ${labelPart(label)}base URLs are supported`)
+  }
+  if (resolved.search || resolved.hash) {
+    throw new TypeError(`${labelPart(label, true)}base URLs must not contain a query or fragment`)
+  }
+  if (hasUserinfoSyntax(value) || resolved.username.length > 0 || resolved.password.length > 0) {
+    throw new TypeError(`${labelPart(label, true)}base URLs must not contain credentials`)
+  }
+  if (expectedOrigin !== undefined && resolved.origin !== expectedOrigin) {
+    throw new TypeError(`${labelPart(label, true)}base URL must be same-origin`)
+  }
+
+  return `${value.replace(/\/+$/, '')}${path}`
+}

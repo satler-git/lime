@@ -1,5 +1,5 @@
 import { User, Sparkles, SlidersHorizontal, BookOpen } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
 import type { DictionaryImportApplication } from '../import-service'
 import type { LlmConfig } from '../settings-storage'
@@ -187,10 +187,19 @@ export function SettingsScreen({
   importApplication,
 }: SettingsScreenProps) {
   const [localLlm, setLocalLlm] = useState(llmConfig)
+  const localLlmRef = useRef(localLlm)
 
   useEffect(() => {
     setLocalLlm(llmConfig)
+    localLlmRef.current = llmConfig
   }, [llmConfig])
+
+  const updateLlm = useCallback((patch: Partial<typeof localLlm>) => {
+    const next = { ...localLlmRef.current, ...patch }
+    localLlmRef.current = next
+    setLocalLlm(next)
+    onLlmConfigChange?.(next)
+  }, [onLlmConfigChange])
 
   return (
     <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby="settings-title">
@@ -230,29 +239,20 @@ export function SettingsScreen({
               label="API Endpoint"
               value={localLlm.endpoint}
               placeholder="https://api.openai.com/v1/chat/completions"
-              onChange={(endpoint) => {
-                setLocalLlm((current) => ({ ...current, endpoint }))
-                onLlmConfigChange?.({ ...localLlm, endpoint })
-              }}
+              onChange={(endpoint) => { updateLlm({ endpoint }) }}
             />
             <TextInput
               label="Model"
               value={localLlm.model}
               placeholder="gpt-4o-mini"
-              onChange={(model) => {
-                setLocalLlm((current) => ({ ...current, model }))
-                onLlmConfigChange?.({ ...localLlm, model })
-              }}
+              onChange={(model) => { updateLlm({ model }) }}
             />
             <TextInput
               label="API Key"
               value={localLlm.apiKey}
               type="password"
               placeholder="sk-..."
-              onChange={(apiKey) => {
-                setLocalLlm((current) => ({ ...current, apiKey }))
-                onLlmConfigChange?.({ ...localLlm, apiKey })
-              }}
+              onChange={(apiKey) => { updateLlm({ apiKey }) }}
             />
           </div>
         </SettingGroup>

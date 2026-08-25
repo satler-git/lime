@@ -1,3 +1,4 @@
+import { resolveEndpoint } from '../worker/origin'
 import { validateTelemetryBatch } from './service'
 import {
   MAX_TELEMETRY_ITEMS_PER_BATCH,
@@ -33,6 +34,7 @@ export type TelemetryClientErrorKind =
   | 'http'
   | 'payload-too-large'
   | 'invalid-event'
+  | 'invalid-response'
 
 /** Safe client-side failure. It never retains fetch errors or response bodies. */
 export class TelemetryClientError extends Error {
@@ -99,23 +101,13 @@ const expectedOriginFor = (explicitOrigin: string | undefined): string | undefin
 }
 
 const endpointFor = (baseUrl: string | undefined, expectedOrigin: string | undefined): string => {
-  const value = baseUrl?.trim() ?? ''
-  if (value.length === 0) return '/api/telemetry/batch'
-  if (value.startsWith('//')) throw new TypeError('Protocol-relative telemetry base URLs are not supported')
-
-  let resolvedBase: URL
-  try {
-    resolvedBase = new URL(value)
-  } catch {
-    if (value.startsWith('/')) return `${value.replace(/\/+$/, '')}/api/telemetry/batch`
-    throw new TypeError('A valid telemetry base URL is required')
-  }
-
-  if (expectedOrigin === undefined) {
+  const value = (baseUrl ?? '').trim()
+  // For absolute base URLs, an explicit origin is required so the client can
+  // enforce the same-origin policy before any network request is made.
+  if (value.length > 0 && !value.startsWith('/') && expectedOrigin === undefined) {
     throw new TypeError('An expected origin is required for an absolute telemetry base URL')
   }
-  if (resolvedBase.origin !== expectedOrigin) throw new TypeError('Telemetry base URL must be same-origin')
-  return new URL('/api/telemetry/batch', resolvedBase).toString()
+  return resolveEndpoint(baseUrl, '/api/telemetry/batch', { expectedOrigin, label: 'telemetry' })
 }
 
 const serializedBatch = (events: readonly TelemetryEvent[]): string => {
@@ -157,6 +149,15 @@ const splitBatches = (events: readonly TelemetryEvent[]): TelemetryEvent[][] => 
 }
 
 const errorName = (value: unknown): unknown => isRecord(value) ? value.name : undefined
+
+const hasJsonContentType = (response: Response): boolean => {
+  const contentType = response.headers.get('Content-Type')
+  return contentType !== null && contentType.split(';', 1)[0]?.trim().toLowerCase() === 'application/json'
+}
+
+const isNonNegativeInteger = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+)
 
 /** The narrow browser transport boundary for authenticated raw telemetry. */
 export interface TelemetryTransport {
@@ -268,8 +269,33 @@ export class TelemetryQueue implements TelemetryTransport {
         if (response.status === 413) throw new TelemetryPayloadTooLargeError()
         throw new TelemetryClientError('http', 'Telemetry request failed', response.status)
       }
-      this.removeSent(batch)
+
+      const acceptedCount = await this.parseFlushResponse(response, batch.length)
+      this.removeSent(batch.slice(0, acceptedCount))
     }
+  }
+
+  private async parseFlushResponse(response: Response, batchSize: number): Promise<number> {
+    if (!hasJsonContentType(response)) {
+      throw new TelemetryClientError('invalid-response', 'Invalid telemetry response')
+    }
+    let payload: unknown
+    try {
+      payload = await response.json() as unknown
+    } catch {
+      throw new TelemetryClientError('invalid-response', 'Invalid telemetry response')
+    }
+    if (!isRecord(payload)) {
+      throw new TelemetryClientError('invalid-response', 'Invalid telemetry response')
+    }
+    const { accepted, duplicates } = payload
+    if (!isNonNegativeInteger(accepted) || !isNonNegativeInteger(duplicates)) {
+      throw new TelemetryClientError('invalid-response', 'Invalid telemetry response')
+    }
+    if (accepted > batchSize || duplicates > batchSize || accepted + duplicates !== batchSize) {
+      throw new TelemetryClientError('invalid-response', 'Telemetry response count mismatch')
+    }
+    return accepted + duplicates
   }
 
   private removeSent(sent: readonly TelemetryEvent[]): void {

@@ -1,4 +1,4 @@
-import { hasControlCharacters, hasUserinfoSyntax, parseExpectedOrigin } from '../origin'
+import { parseExpectedOrigin, resolveEndpoint } from '../origin'
 import { cancelResponseBody } from '../../response'
 import type { User } from './types'
 
@@ -85,55 +85,13 @@ const endpointFor = (
   expectedOrigin: string | undefined,
   path: '/auth/google' | '/auth/me' | '/auth/logout',
 ): string => {
-  const value = baseUrl ?? ''
-  if (value.length === 0) return path
-
-  // Reject characters that URL parsing may normalize before construction.
-  if (hasControlCharacters(value)) {
-    throw new TypeError('Control characters in auth base URLs are not supported')
-  }
-  if (/\s/.test(value)) {
-    throw new TypeError('Whitespace in auth base URLs is not supported')
-  }
-  // WHATWG URL parsing accepts backslashes as alternate slash syntax. Reject them
-  // before construction so they cannot turn a seemingly relative value into a URL.
-  if (value.includes('\\')) {
-    throw new TypeError('Backslashes in auth base URLs are not supported')
-  }
-  if (value.startsWith('//')) {
-    throw new TypeError('Protocol-relative auth base URLs are not supported')
-  }
-
-  let resolvedBase: URL
-  try {
-    resolvedBase = new URL(value)
-  } catch {
-    // Relative paths are useful in browser tests and deployments behind a path prefix.
-    if (value.startsWith('/')) {
-      if (value.includes('?') || value.includes('#') || /\s/.test(value)) {
-        throw new TypeError('Relative auth base URLs must not contain query, fragment, or whitespace')
-      }
-      return `${value.replace(/\/+$/, '')}${path}`
-    }
-    throw new TypeError('A valid auth base URL is required')
-  }
-
-  if (resolvedBase.search || resolvedBase.hash) {
-    throw new TypeError('Auth base URLs must not contain a query or fragment')
-  }
-
-  if (hasUserinfoSyntax(value) || resolvedBase.username.length > 0 || resolvedBase.password.length > 0) {
-    throw new TypeError('Auth base URLs must not contain credentials')
-  }
-  if (expectedOrigin === undefined) {
+  const value = (baseUrl ?? '').trim()
+  // For absolute base URLs, an explicit origin is required so the client can
+  // enforce the same-origin policy before any network request is made.
+  if (value.length > 0 && !value.startsWith('/') && expectedOrigin === undefined) {
     throw new TypeError('An expected origin is required for an absolute auth base URL')
   }
-  if (resolvedBase.origin !== expectedOrigin) {
-    throw new TypeError('Auth base URL must be same-origin')
-  }
-
-  const normalizedBase = `${resolvedBase.href.replace(/\/+$/, '')}/`
-  return new URL(path.slice(1), normalizedBase).toString()
+  return resolveEndpoint(baseUrl, path, { expectedOrigin, label: 'auth' })
 }
 
 const hasJsonContentType = (response: Response): boolean => {
@@ -162,17 +120,6 @@ const parseUser = (value: unknown, status: number): AuthUser => {
     name: typeof name === 'string' ? name.trim() || null : null,
     picture: typeof picture === 'string' ? picture.trim() || null : null,
   }
-}
-
-const parseLogoutResponse = (value: unknown, status: number): void => {
-  if (!isRecord(value)) throw new AuthInvalidResponseError(status)
-
-  // The documented JSON success shape is { success: true }. Explicit failure
-  // markers are rejected even when they arrive alongside a successful marker.
-  if (value.success === false || value.ok === false) throw new AuthInvalidResponseError(status)
-  if (value.success !== true) throw new AuthInvalidResponseError(status)
-  if ('success' in value && typeof value.success !== 'boolean') throw new AuthInvalidResponseError(status)
-  if ('ok' in value && typeof value.ok !== 'boolean') throw new AuthInvalidResponseError(status)
 }
 
 const isAborted = (signal: AbortSignal | undefined, error: unknown): boolean => (
@@ -285,7 +232,7 @@ export class AuthClient {
   }
 
   async getCurrentUser(signal?: AbortSignal): Promise<AuthUser | null> {
-    const response = await this.request(this.meEndpoint, 'GET', signal)
+    const response = await this.request(this.meEndpoint, 'GET', undefined, signal)
     if (response.status === 401) {
       cancelResponseBody(response)
       return null
@@ -300,7 +247,7 @@ export class AuthClient {
   }
 
   async logout(signal?: AbortSignal): Promise<void> {
-    const response = await this.request(this.logoutEndpoint, 'POST', signal)
+    const response = await this.request(this.logoutEndpoint, 'POST', '{}', signal)
     if (response.status === 204) {
       cancelResponseBody(response)
       return
@@ -310,16 +257,22 @@ export class AuthClient {
       throw new AuthClientError('http', 'Authentication request failed', response.status)
     }
 
-    const payload = await this.json(response, signal)
-    parseLogoutResponse(payload, response.status)
+    cancelResponseBody(response)
+    throw new AuthInvalidResponseError(response.status)
   }
 
-  private async request(endpoint: string, method: 'GET' | 'POST', signal: AbortSignal | undefined): Promise<Response> {
+  private async request(
+    endpoint: string,
+    method: 'GET' | 'POST',
+    body: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
     try {
       return await this.fetcher(endpoint, {
         method,
         credentials: 'same-origin',
         cache: 'no-store',
+        ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
         ...(signal === undefined ? {} : { signal }),
       })
     } catch (error: unknown) {

@@ -24,8 +24,8 @@ const card = {
   due: '2025-01-02T00:00:00.000Z',
   stability: 0,
   difficulty: 0,
-  elapsedDays: 0,
-  scheduledDays: 0,
+  elapsedDays: 0.5,
+  scheduledDays: 0.5,
   learningSteps: 0,
   reps: 0,
   lapses: 0,
@@ -114,7 +114,7 @@ describe('SyncClient', () => {
       fetch: sameOriginFetcher,
     })
     await expect(sameOriginClient.pull()).resolves.toEqual(batch)
-    expect(sameOriginFetcher).toHaveBeenCalledWith('https://app.example.test/api/sync', expect.anything())
+    expect(sameOriginFetcher).toHaveBeenCalledWith('https://app.example.test/deployment/api/sync', expect.anything())
 
     const relativeFetcher = vi.fn<SyncFetch>(async () => responseFor(batch))
     await expect(new SyncClient({ baseUrl: '/deployment', fetch: relativeFetcher }).pull()).resolves.toEqual(batch)

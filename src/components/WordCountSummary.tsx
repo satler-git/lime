@@ -6,6 +6,7 @@ type WordCountSummaryProps = {
   newCount?: number
   reviewLimit?: number
   newLimit?: number
+  disabled?: boolean
   onReviewLimitChange?: (limit: number) => void
   onNewLimitChange?: (limit: number) => void
 }
@@ -17,13 +18,14 @@ type AdjustModalProps = {
   title: string
   available: number
   value: number
+  disabled?: boolean
   onChange: (next: number) => void
   onClose: () => void
 }
 
 const clamp = (value: number, min: number) => Math.max(min, Number.isNaN(value) ? 0 : value)
 
-function LimitAdjustModal({ open, title, available, value, onChange, onClose }: AdjustModalProps) {
+function LimitAdjustModal({ open, title, available, value, disabled, onChange, onClose }: AdjustModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [draft, setDraft] = useState(value)
 
@@ -51,17 +53,19 @@ function LimitAdjustModal({ open, title, available, value, onChange, onClose }: 
       <div className="mt-4 flex items-center gap-2">
         <span className="text-xs text-text-faint">上限</span>
         <input
-          className="w-20 rounded-[7px] border border-line bg-background px-3 py-2 text-right text-sm text-text focus:border-accent focus:outline-none"
+          className="w-20 rounded-[7px] border border-line bg-background px-3 py-2 text-right text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           type="number"
           min={0}
           value={draft}
+          disabled={disabled}
           onChange={(event) => setDraft(clamp(parseInt(event.target.value, 10), 0))}
           aria-label="上限を設定"
         />
         <span className="text-xs text-text-faint">語</span>
         <button
-          className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] border border-line bg-surface px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96]"
+          className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] border border-line bg-surface px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
+          disabled={disabled}
           onClick={() => setDraft((current) => current + 20)}
         >
           <Plus size={14} strokeWidth={2} aria-hidden="true" />
@@ -69,8 +73,9 @@ function LimitAdjustModal({ open, title, available, value, onChange, onClose }: 
         </button>
       </div>
       <button
-        className="mt-5 h-10 w-full cursor-pointer rounded-[7px] border-0 bg-accent text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98]"
+        className="mt-5 h-10 w-full cursor-pointer rounded-[7px] border-0 bg-accent text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50"
         type="button"
+        disabled={disabled}
         onClick={() => { onChange(draft); onClose() }}
       >
         完了
@@ -84,6 +89,7 @@ export function WordCountSummary({
   newCount = 28,
   reviewLimit,
   newLimit,
+  disabled,
   onReviewLimitChange,
   onNewLimitChange,
 }: WordCountSummaryProps) {
@@ -128,8 +134,9 @@ export function WordCountSummary({
           <span className="text-sm text-text-faint">語</span>
         </div>
         <button
-          className="inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[8px] border border-line bg-surface-raised text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96]"
+          className="inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[8px] border border-line bg-surface-raised text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
+          disabled={disabled}
           aria-label={`${label}を増やす`}
           onClick={() => setOpenCategory(category)}
         >
@@ -151,6 +158,7 @@ export function WordCountSummary({
         title="復習の上限"
         available={reviewCount}
         value={reviewMax}
+        disabled={disabled}
         onChange={changeReviewMax}
         onClose={() => setOpenCategory(null)}
       />
@@ -159,6 +167,7 @@ export function WordCountSummary({
         title="新出の上限"
         available={newCount}
         value={newMax}
+        disabled={disabled}
         onChange={changeNewMax}
         onClose={() => setOpenCategory(null)}
       />

@@ -18,7 +18,10 @@ const event = (overrides: Partial<TelemetryEvent> & Pick<TelemetryEvent, 'type' 
   ...overrides,
 }) as TelemetryEventInput
 
-const response = (): Response => new Response(null, { status: 204 })
+const response = (): Response => new Response(JSON.stringify({ accepted: 1, duplicates: 0 }), {
+  status: 200,
+  headers: { 'Content-Type': 'application/json' },
+})
 
 const queueFor = (fetcher: TelemetryFetch, clientEventIdFactory = (() => {
   let count = 0
@@ -105,8 +108,16 @@ describe('TelemetryQueue', () => {
     }])
   })
 
+  const okResponseFor = (body: unknown): Response => {
+    const events = (typeof body === 'string' ? JSON.parse(body) : body) as { events: unknown[] }
+    return new Response(JSON.stringify({ accepted: events.events.length, duplicates: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   it('splits batches at the shared item limit', async () => {
-    const fetcher = vi.fn<TelemetryFetch>(async () => response())
+    const fetcher = vi.fn<TelemetryFetch>(async (_input, init) => okResponseFor(init?.body))
     const queue = queueFor(fetcher, (() => {
       let count = 0
       return () => `event-${count++}`
@@ -123,7 +134,7 @@ describe('TelemetryQueue', () => {
   })
 
   it('splits a batch before the request body byte limit', async () => {
-    const fetcher = vi.fn<TelemetryFetch>(async () => response())
+    const fetcher = vi.fn<TelemetryFetch>(async (_input, init) => okResponseFor(init?.body))
     const queue = queueFor(fetcher, (() => {
       let count = 0
       return () => `event-${count++}`

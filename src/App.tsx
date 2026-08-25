@@ -37,11 +37,11 @@ export default function App({ initialRoute = 'today' }: AppProps) {
   }, [])
 
   const { user, isLoading: isAuthLoading } = useAuth()
-  const { reviewLimit, newLimit, setReviewLimit, setNewLimit } = useLimits(user, isAuthLoading)
+  const { reviewLimit, newLimit, setReviewLimit, setNewLimit, isLoading: isLimitsLoading } = useLimits(user, isAuthLoading)
   const userId = user?.id
   const { cardService, repository: cardRepository, isLoading: isCardLoading } = useCardService(userId)
-  useSync({ userId, cardRepository })
-  const telemetry = useTelemetryQueue(userId)
+  const { error: syncError } = useSync({ userId, cardRepository })
+  const { queue: telemetry, error: telemetryError } = useTelemetryQueue(userId)
   const importApplication = useMemo(() => createDictionaryImportService(userId), [userId])
 
   const [dueCards, setDueCards] = useState<Card[]>([])
@@ -121,7 +121,9 @@ export default function App({ initialRoute = 'today' }: AppProps) {
 
   const reviewCount = todayPlan.selectedCards.filter((card) => card.state !== 'new').length
   const newCount = todayPlan.selectedCards.filter((card) => card.state === 'new').length
-  const isStartButtonDisabled = isCardLoading || todayPlan.selectedCards.length === 0 || contentProvider === undefined
+  const isStartButtonDisabled = isCardLoading || isLimitsLoading || todayPlan.selectedCards.length === 0 || contentProvider === undefined
+  // TODO: track actual completed count instead of hard-coding zero.
+  const todayCompleted = 0
 
   return (
     <AppShell route={route} onNavigate={navigate}>
@@ -132,14 +134,17 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           reviewLimit={reviewLimit}
           newLimit={newLimit}
           todayTarget={Math.max(1, todayPlan.selectedCards.length)}
-          todayCompleted={0}
+          todayCompleted={todayCompleted}
           cycle={todayPlan.cycles.length > 0 ? 1 : 0}
           totalCycles={Math.max(1, todayPlan.cycles.length)}
+          isLoading={isLimitsLoading}
+          isStartButtonDisabled={isStartButtonDisabled}
+          syncError={syncError}
+          telemetryError={telemetryError?.message}
           onReviewLimitChange={setReviewLimit}
           onNewLimitChange={setNewLimit}
           onStartReading={() => navigate('reading')}
           onOpenSettings={() => navigate('settings')}
-          isStartButtonDisabled={isStartButtonDisabled}
         />
       )}
       {route === 'reading' && (

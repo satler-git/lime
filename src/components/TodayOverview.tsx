@@ -20,16 +20,15 @@ type TodayOverviewProps = {
   reviewLimit?: number
   newLimit?: number
   recentSessions?: RecentSession[]
+  isLoading?: boolean
   isStartButtonDisabled?: boolean
+  syncError?: string
+  telemetryError?: string
   onStartReading?: () => void
   onOpenSettings?: () => void
   onReviewLimitChange?: (limit: number) => void
   onNewLimitChange?: (limit: number) => void
 }
-
-const defaultRecentSessions: RecentSession[] = [
-  { cycle: 1, title: 'A city built around water', words: 15, score: '4 / 5' },
-]
 
 export function TodayOverview({
   todayTarget = 100,
@@ -40,8 +39,11 @@ export function TodayOverview({
   newCount = 28,
   reviewLimit,
   newLimit,
-  recentSessions = defaultRecentSessions,
+  recentSessions = [],
+  isLoading = false,
   isStartButtonDisabled = false,
+  syncError,
+  telemetryError,
   onStartReading,
   onOpenSettings,
   onReviewLimitChange,
@@ -57,12 +59,19 @@ export function TodayOverview({
         <button className="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96]" type="button" aria-label="設定を開く" onClick={onOpenSettings}><Settings2 size={19} strokeWidth={1.8} aria-hidden="true" /></button>
       </header>
       <div className="mt-9 grid gap-6">
+        {(syncError || telemetryError) && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+            {syncError && <p className="m-0">{syncError}</p>}
+            {telemetryError && <p className="m-0">{telemetryError}</p>}
+          </div>
+        )}
         <ReadingProgress cycle={cycle} totalCycles={totalCycles} todayTarget={todayTarget} todayCompleted={todayCompleted} />
         <WordCountSummary
           reviewCount={reviewCount}
           newCount={newCount}
           reviewLimit={reviewLimit}
           newLimit={newLimit}
+          disabled={isLoading}
           onReviewLimitChange={onReviewLimitChange}
           onNewLimitChange={onNewLimitChange}
         />

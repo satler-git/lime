@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { workerBaseUrl } from './config'
 import { loadSettings } from './settings-storage'
-import { hasControlCharacters, hasUserinfoSyntax } from './worker/origin'
+import { resolveEndpoint } from './worker/origin'
 import type { AuthUser } from './worker/auth/client'
 
 const DEFAULT_REVIEW_LIMIT = 50
 const DEFAULT_NEW_LIMIT = 20
 const PUSH_DEBOUNCE_MS = 500
 
-const LIMITS_PATH = 'api/settings/limits'
 const ABSOLUTE_LIMITS_PATH = '/api/settings/limits'
 
 type Limits = {
@@ -24,56 +23,9 @@ const isNonNegativeInteger = (value: unknown): value is number => (
   typeof value === 'number' && Number.isInteger(value) && value >= 0
 )
 
-const validateBaseUrl = (value: string): void => {
-  if (hasControlCharacters(value)) {
-    throw new TypeError('Control characters in settings base URLs are not supported')
-  }
-  if (/\s/.test(value)) {
-    throw new TypeError('Whitespace in settings base URLs is not supported')
-  }
-  if (value.includes('\\')) {
-    throw new TypeError('Backslashes in settings base URLs are not supported')
-  }
-  if (value.startsWith('//')) {
-    throw new TypeError('Protocol-relative settings base URLs are not supported')
-  }
-}
-
-export const getSettingsEndpoint = (base: string = workerBaseUrl): string => {
-  const value = base.trim()
-  if (value.length === 0) return ABSOLUTE_LIMITS_PATH
-
-  validateBaseUrl(value)
-
-  if (value.startsWith('/')) {
-    if (value.includes('?') || value.includes('#')) {
-      throw new TypeError('Relative settings base URLs must not contain a query or fragment')
-    }
-    return `${value.replace(/\/+$/, '')}${ABSOLUTE_LIMITS_PATH}`
-  }
-
-  let resolvedBase: URL
-  try {
-    resolvedBase = new URL(value)
-  } catch {
-    throw new TypeError('A valid settings base URL is required')
-  }
-
-  if (resolvedBase.protocol !== 'http:' && resolvedBase.protocol !== 'https:') {
-    throw new TypeError('Only http: and https: settings base URLs are supported')
-  }
-
-  if (resolvedBase.search || resolvedBase.hash) {
-    throw new TypeError('Settings base URLs must not contain a query or fragment')
-  }
-
-  if (hasUserinfoSyntax(value) || resolvedBase.username.length > 0 || resolvedBase.password.length > 0) {
-    throw new TypeError('Settings base URLs must not contain credentials')
-  }
-
-  const normalizedBase = `${resolvedBase.href.replace(/\/+$/, '')}/`
-  return new URL(LIMITS_PATH, normalizedBase).toString()
-}
+export const getSettingsEndpoint = (base: string = workerBaseUrl): string => (
+  resolveEndpoint(base, ABSOLUTE_LIMITS_PATH, { label: 'settings' })
+)
 
 const loadRemoteLimits = async (signal: AbortSignal): Promise<Limits | null> => {
   const response = await fetch(getSettingsEndpoint(), {

@@ -4,9 +4,14 @@ import { createTelemetryQueue, type TelemetryTransport } from './telemetry/clien
 
 const FLUSH_INTERVAL_MS = 30_000
 
-export function useTelemetryQueue(userId?: string): TelemetryTransport | undefined {
+export type UseTelemetryQueueResult = {
+  queue: TelemetryTransport | undefined
+  error: Error | undefined
+}
+
+export function useTelemetryQueue(userId?: string): UseTelemetryQueueResult {
   const [queue, setQueue] = useState<TelemetryTransport | undefined>(undefined)
-  const [, setError] = useState<Error | undefined>(undefined)
+  const [error, setError] = useState<Error | undefined>(undefined)
 
   useEffect(() => {
     setQueue(undefined)
@@ -44,5 +49,5 @@ export function useTelemetryQueue(userId?: string): TelemetryTransport | undefin
     }
   }, [userId])
 
-  return queue
+  return { queue, error }
 }
