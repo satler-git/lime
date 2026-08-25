@@ -5,7 +5,9 @@ import type { ReviewAction } from '../../review/types'
 import type { ReadingSession } from '../../session/types'
 import {
   MAX_SYNC_CARD_IDS_PER_SESSION,
+  MAX_SYNC_FIELD_BYTES,
   MAX_SYNC_ITEMS_PER_TYPE,
+  MAX_SYNC_RECORD_BYTES,
   MAX_SYNC_LOOKUP_EVENTS_PER_SESSION,
   MAX_SYNC_REQUEST_BODY_BYTES,
   MAX_SYNC_RESPONSE_BODY_BYTES,
@@ -112,6 +114,20 @@ describe('sync API', () => {
     expect(await crossOriginGet.json()).toEqual({ error: 'Forbidden' })
     expect(crossOriginGet.headers.get('Cache-Control')).toBe('private, no-store')
 
+    for (const malformedOrigin of [
+      'https://app.test/path',
+      'https://app.test?query',
+      'https://user@app.test',
+      'https://:@app.test',
+      'not-an-origin',
+    ]) {
+      const malformed = await app.request('/api/sync', {
+        headers: { Cookie: 'lime_session=token', Origin: malformedOrigin },
+      }, env)
+      expect(malformed.status).toBe(403)
+      expect(await malformed.json()).toEqual({ error: 'Forbidden' })
+    }
+
     const sameOrigin = await app.request('/api/sync', {
       method: 'POST',
       headers: { Cookie: 'lime_session=token', 'Content-Type': 'application/json', Origin: 'https://app.test' },
@@ -202,6 +218,33 @@ describe('sync API', () => {
     expect(await response.json()).toEqual({ error: 'Payload too large' })
   })
 
+  it('rejects overlong fields and records in inbound sync payloads', async () => {
+    const dependencies: SyncRouteDependencies = { auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 }, repositories: () => repositories() }
+    const app = createSyncApp(dependencies)
+    const fake = repositories()
+    const oversizedField = await app.request('/api/sync', {
+      method: 'POST', headers: { Cookie: 'lime_session=token', 'Content-Type': 'application/json', Origin: 'https://app.test' },
+      body: JSON.stringify({
+        cards: [{ card: serializeCard({ ...fake.sample.card, word: 'x'.repeat(MAX_SYNC_FIELD_BYTES + 1) }), updatedAt: '2025-01-01T00:00:00.000Z' }],
+        reviewActions: [], sessions: [],
+      }),
+    }, env)
+    expect(oversizedField.status).toBe(400)
+    expect(await oversizedField.json()).toEqual({ error: 'Invalid sync payload' })
+
+    const event = { id: 'lookup-1', word: 'hola', source: 'article' as const, position: { paragraph: 0, character: 0 }, timestamp: new Date('2025-01-01T00:00:00.000Z'), inSrs: false }
+    const oversizedRecord = await app.request('/api/sync', {
+      method: 'POST', headers: { Cookie: 'lime_session=token', 'Content-Type': 'application/json', Origin: 'https://app.test' },
+      body: JSON.stringify({
+        cards: [], reviewActions: [],
+        sessions: [{ session: serializeReadingSession({ ...fake.sample.readingSession, lookupEvents: new Array(MAX_SYNC_LOOKUP_EVENTS_PER_SESSION).fill(event) }), updatedAt: '2025-01-01T00:00:00.000Z' }],
+      }),
+    }, env)
+    expect(MAX_SYNC_RECORD_BYTES).toBeGreaterThan(MAX_SYNC_FIELD_BYTES)
+    expect(oversizedRecord.status).toBe(400)
+    expect(await oversizedRecord.json()).toEqual({ error: 'Invalid sync payload' })
+  })
+
   it('rejects declared and chunked bodies over the limit before JSON parsing', async () => {
     const dependencies: SyncRouteDependencies = { auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 }, repositories: () => repositories() }
     const app = createSyncApp(dependencies)
@@ -257,6 +300,60 @@ describe('sync API', () => {
     expect(await response.json()).toEqual({ error: 'Payload too large' })
   })
 
+  it('cancels and promptly rejects an aborted request body without hanging', async () => {
+    const dependencies: SyncRouteDependencies = { auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 }, repositories: () => repositories() }
+    const controller = new AbortController()
+    let cancelled = false
+    let resolveReadStarted: (() => void) | undefined
+    const readStarted = new Promise<void>((resolve) => { resolveReadStarted = resolve })
+    const stream = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode('{'))
+      },
+      pull() {
+        resolveReadStarted?.()
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const request = new Request('https://app.test/api/sync', {
+      method: 'POST',
+      headers: { Cookie: 'lime_session=token', 'Content-Type': 'application/json', Origin: 'https://app.test' },
+      body: stream,
+      signal: controller.signal,
+      duplex: 'half',
+    } as RequestInit)
+    const pending = createSyncApp(dependencies).fetch(request, env)
+    await readStarted
+    controller.abort()
+    const response = await pending
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Invalid sync payload' })
+    expect(cancelled).toBe(true)
+  })
+
+  it('rejects an aggregate GET response over the byte limit before full stringification', async () => {
+    const fake = repositories()
+    const cards = new Array(MAX_SYNC_ITEMS_PER_TYPE).fill(null).map((_, index) => ({
+      card: { ...fake.sample.card, id: `card-${index}`, word: 'x'.repeat(4_000) },
+      updatedAt: new Date(),
+    }))
+    const dependencies: SyncRouteDependencies = {
+      auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 },
+      repositories: () => ({
+        cards: { loadAllWithUpdatedAt: async (_limit: number) => cards, saveAt: async () => {} },
+        reviewActions: { loadAllWithUpdatedAt: async (_limit: number) => [], saveAt: async () => {} },
+        sessions: { loadAllWithUpdatedAt: async (_limit: number) => [], saveAt: async () => {} },
+      }),
+    }
+
+    const response = await createSyncApp(dependencies).request('/api/sync', { headers: { Cookie: 'lime_session=token' } }, env)
+    expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ error: 'Payload too large' })
+  })
+
   it('limits session card IDs and lookup events and rejects invalid positions', async () => {
     const dependencies: SyncRouteDependencies = { auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 }, repositories: () => repositories() }
     const app = createSyncApp(dependencies)
@@ -299,6 +396,22 @@ describe('sync API', () => {
       body: JSON.stringify(cardEnvelope({ ...serializeCard(fake.sample.card), reps: -1 })),
     }, env)
     expect(negativeCounter.status).toBe(400)
+  })
+
+  it('returns a generic 413 for overlong stored fields without truncating them', async () => {
+    const fake = repositories()
+    const oversized = { ...fake.sample.card, word: 'x'.repeat(MAX_SYNC_FIELD_BYTES + 1) }
+    const dependencies: SyncRouteDependencies = {
+      auth: { store: new FakeAuthStore(), crypto, now: () => 1_000 },
+      repositories: () => ({
+        cards: { loadAllWithUpdatedAt: async (_limit: number) => [{ card: oversized, updatedAt: new Date() }], saveAt: async () => {} },
+        reviewActions: { loadAllWithUpdatedAt: async (_limit: number) => [], saveAt: async () => {} },
+        sessions: { loadAllWithUpdatedAt: async (_limit: number) => [], saveAt: async () => {} },
+      }),
+    }
+    const response = await createSyncApp(dependencies).request('/api/sync', { headers: { Cookie: 'lime_session=token' } }, env)
+    expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ error: 'Payload too large' })
   })
 
   it('returns a generic 413 when serialized GET data exceeds the response limit', async () => {

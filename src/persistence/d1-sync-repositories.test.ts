@@ -2,6 +2,7 @@ import type { D1Database, D1PreparedStatement } from '@cloudflare/workers-types'
 import { describe, expect, it } from 'vitest'
 import { createCard } from '../domain/card'
 import { D1CardRepository, D1ReadingSessionRepository, D1ReviewActionRepository } from './d1-sync-repositories'
+import { MAX_SYNC_LOAD_LIMIT, MAX_SYNC_ITEMS_PER_TYPE } from '../sync/types'
 import type { ReviewAction } from '../review/types'
 import type { ReadingSession } from '../session/types'
 
@@ -108,6 +109,21 @@ describe('D1 sync repositories', () => {
 
     await expect(repository.loadAllWithUpdatedAt(1)).resolves.toHaveLength(1)
     await expect(repository.loadAllWithUpdatedAt(2)).resolves.toHaveLength(2)
+  })
+
+  it('rejects sync read limits outside the safe bounded range', async () => {
+    const fake = new FakeD1()
+    const readers = [
+      (limit: number) => new D1CardRepository(fake.db, 'user-a').loadAllWithUpdatedAt(limit),
+      (limit: number) => new D1ReviewActionRepository(fake.db, 'user-a').loadAllWithUpdatedAt(limit),
+      (limit: number) => new D1ReadingSessionRepository(fake.db, 'user-a').loadAllWithUpdatedAt(limit),
+    ]
+    expect(MAX_SYNC_LOAD_LIMIT).toBe(MAX_SYNC_ITEMS_PER_TYPE + 1)
+    await expect(readers[0]?.(MAX_SYNC_LOAD_LIMIT)).resolves.toEqual([])
+    for (const limit of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, MAX_SYNC_LOAD_LIMIT + 1]) {
+      for (const read of readers) await expect(read(limit)).rejects.toThrow(RangeError)
+    }
+    expect(fake.calls).toHaveLength(1)
   })
 
   it('keeps the newest card, action, and session envelope', async () => {

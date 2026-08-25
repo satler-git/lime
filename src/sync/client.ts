@@ -1,3 +1,5 @@
+import { hasControlCharacters, hasUserinfoSyntax, parseExpectedOrigin } from '../worker/origin'
+import { cancelResponseBody } from '../response'
 import {
   MAX_SYNC_ITEMS_PER_TYPE,
   MAX_SYNC_REQUEST_BODY_BYTES,
@@ -77,19 +79,25 @@ const expectedOriginFor = (explicitOrigin: string | undefined): string | undefin
   const value = explicitOrigin ?? (typeof globalThis.location === 'undefined' ? undefined : globalThis.location.origin)
   if (value === undefined) return undefined
 
-  try {
-    const origin = new URL(value).origin
-    if (origin === 'null') throw new TypeError()
-    return origin
-  } catch {
-    throw new TypeError('A valid same-origin origin is required')
-  }
+  return parseExpectedOrigin(value)
 }
 
 const endpointFor = (baseUrl: string | undefined, expectedOrigin: string | undefined): string => {
-  const value = baseUrl?.trim() ?? ''
+  const value = baseUrl ?? ''
   if (value.length === 0) return '/api/sync'
 
+  // Reject characters that URL parsing may normalize before construction.
+  if (hasControlCharacters(value)) {
+    throw new TypeError('Control characters in sync base URLs are not supported')
+  }
+  if (/\s/.test(value)) {
+    throw new TypeError('Whitespace in sync base URLs is not supported')
+  }
+  // WHATWG URL parsing accepts backslashes as alternate slash syntax. Reject them
+  // before construction so they cannot turn a seemingly relative value into a URL.
+  if (value.includes('\\')) {
+    throw new TypeError('Backslashes in sync base URLs are not supported')
+  }
   if (value.startsWith('//')) {
     throw new TypeError('Protocol-relative sync base URLs are not supported')
   }
@@ -99,16 +107,25 @@ const endpointFor = (baseUrl: string | undefined, expectedOrigin: string | undef
     resolvedBase = new URL(value)
   } catch {
     // Relative paths are useful in browser tests and deployments behind a path prefix.
-    if (value.startsWith('/')) return `${value.replace(/\/+$/, '')}/api/sync`
+    if (value.startsWith('/')) {
+      if (value.includes('?') || value.includes('#') || /\s/.test(value)) {
+        throw new TypeError('Relative sync base URLs must not contain query, fragment, or whitespace')
+      }
+      return `${value.replace(/\/+$/, '')}/api/sync`
+    }
     throw new TypeError('A valid sync base URL is required')
   }
 
+  if (hasUserinfoSyntax(value) || resolvedBase.username.length > 0 || resolvedBase.password.length > 0) {
+    throw new TypeError('Sync base URLs must not contain credentials')
+  }
   if (expectedOrigin === undefined) {
     throw new TypeError('An expected origin is required for an absolute sync base URL')
   }
   if (resolvedBase.origin !== expectedOrigin) {
     throw new TypeError('Sync base URL must be same-origin')
   }
+
   return new URL('/api/sync', resolvedBase).toString()
 }
 
@@ -142,27 +159,55 @@ const responseContentLengthExceedsLimit = (response: Response): boolean => {
   return !Number.isSafeInteger(length) || length > MAX_SYNC_RESPONSE_BODY_BYTES
 }
 
-const readBoundedResponseBody = async (response: Response): Promise<string> => {
-  if (responseContentLengthExceedsLimit(response)) throw new SyncInvalidResponseError(response.status)
+const isAborted = (signal: AbortSignal | undefined, error: unknown): boolean => (
+  signal?.aborted === true || (isRecord(error) && error.name === 'AbortError')
+)
+
+const readBoundedResponseBody = async (response: Response, signal?: AbortSignal): Promise<string> => {
+  if (signal?.aborted) throw requestError('aborted', 'Sync request aborted')
+  if (responseContentLengthExceedsLimit(response)) {
+    cancelResponseBody(response)
+    throw new SyncInvalidResponseError(response.status)
+  }
   if (response.body === null) return ''
 
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
+  let aborted = false
+  const onAbort = () => {
+    aborted = true
+    void reader.cancel().catch(() => {})
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
+
   try {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
+      if (signal?.aborted || aborted) throw requestError('aborted', 'Sync request aborted')
+      let result: ReadableStreamReadResult<Uint8Array>
+      try {
+        result = await reader.read()
+      } catch (error: unknown) {
+        if (isAborted(signal, error) || aborted) throw requestError('aborted', 'Sync request aborted')
+        throw error
+      }
+      if (result.done) {
+        if (signal?.aborted || aborted) throw requestError('aborted', 'Sync request aborted')
+        break
+      }
+      size += result.value.byteLength
       if (size > MAX_SYNC_RESPONSE_BODY_BYTES) {
         await reader.cancel()
         throw new SyncInvalidResponseError(response.status)
       }
-      chunks.push(value)
+      chunks.push(result.value)
     }
   } catch (error) {
     try { await reader.cancel() } catch {}
+    if (isAborted(signal, error) || aborted) throw requestError('aborted', 'Sync request aborted')
     throw error
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
   }
 
   const bytes = new Uint8Array(size)
@@ -197,11 +242,18 @@ export class SyncClient implements SyncTransport {
   async push(batch: SyncRequest, signal?: AbortSignal): Promise<SyncBatchResponse> {
     let body: string
     try {
-      // Parse first so callers cannot bypass the shared per-type item limits or send
-      // values that the Worker would reject. The parser also strips unknown fields.
+      // Check the raw serialized size first so an oversized request remains the
+      // typed 413-style client error even when its contents also exceed a field cap.
+      const rawBody = JSON.stringify(batch)
+      if (rawBody === undefined || new TextEncoder().encode(rawBody).byteLength > MAX_SYNC_REQUEST_BODY_BYTES) {
+        throw new SyncPayloadTooLargeError()
+      }
+      // Parse so callers cannot bypass the shared per-type and per-field limits or
+      // send values that the Worker would reject. The parser also strips unknown fields.
       const sanitizedBatch = parseSyncRequest(batch)
       body = JSON.stringify(sanitizedBatch)
-    } catch {
+    } catch (error) {
+      if (error instanceof SyncPayloadTooLargeError) throw error
       throw requestError('invalid-request', 'Invalid sync batch')
     }
 
@@ -237,17 +289,31 @@ export class SyncClient implements SyncTransport {
       throw requestError('network', 'Sync request failed')
     }
 
-    if (response.status === 401) throw new SyncUnauthorizedError()
-    if (response.status === 413) throw new SyncPayloadTooLargeError()
-    if (!response.ok) throw new SyncClientError('http', 'Sync request failed', response.status)
+    if (response.status === 401) {
+      cancelResponseBody(response)
+      throw new SyncUnauthorizedError()
+    }
+    if (response.status === 413) {
+      cancelResponseBody(response)
+      throw new SyncPayloadTooLargeError()
+    }
+    if (!response.ok) {
+      cancelResponseBody(response)
+      throw new SyncClientError('http', 'Sync request failed', response.status)
+    }
     // Only successful responses from the handled GET/POST sync endpoints are parsed.
     // Their media type is part of the protocol so an HTML/proxy error cannot be accepted as JSON.
-    if (!hasJsonContentType(response)) throw new SyncInvalidResponseError(response.status)
+    if (!hasJsonContentType(response)) {
+      cancelResponseBody(response)
+      throw new SyncInvalidResponseError(response.status)
+    }
 
     try {
-      const body = await readBoundedResponseBody(response)
+      const body = await readBoundedResponseBody(response, signal)
       return { response, payload: JSON.parse(body) as unknown }
     } catch (error) {
+      if (signal?.aborted) throw requestError('aborted', 'Sync request aborted')
+      if (error instanceof SyncClientError && error.kind === 'aborted') throw error
       if (error instanceof SyncInvalidResponseError) throw error
       // Response parsing failures may include untrusted server content; do not retain it.
       throw new SyncInvalidResponseError(response.status)

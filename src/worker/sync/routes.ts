@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { sameOrigin } from '../origin'
 import { authenticateSession } from '../auth/session-auth'
 import type { AuthDependencies, Env } from '../auth/types'
 import { createD1SyncRepositories, type D1SyncRepositories } from '../../persistence/d1-sync-repositories'
@@ -9,6 +10,7 @@ import {
   MAX_SYNC_CARD_IDS_PER_SESSION,
   MAX_SYNC_ITEMS_PER_TYPE,
   MAX_SYNC_LOOKUP_EVENTS_PER_SESSION,
+  MAX_SYNC_LOAD_LIMIT,
   MAX_SYNC_REQUEST_BODY_BYTES,
   MAX_SYNC_RESPONSE_BODY_BYTES,
   parseSyncRequest,
@@ -34,6 +36,13 @@ class RequestBodyTooLargeError extends Error {
   }
 }
 
+class RequestBodyAbortedError extends Error {
+  constructor() {
+    super('Sync request body aborted')
+    this.name = 'RequestBodyAbortedError'
+  }
+}
+
 class SyncResponseTooLargeError extends Error {
   constructor() {
     super(PAYLOAD_TOO_LARGE_ERROR)
@@ -50,26 +59,51 @@ const contentLengthExceedsLimit = (request: Request): boolean => {
 
 /** Read an inbound body without ever buffering more than the configured limit. */
 const readBoundedRequestBody = async (request: Request): Promise<string> => {
+  const signal = request.signal
+  if (signal.aborted) throw new RequestBodyAbortedError()
   if (contentLengthExceedsLimit(request)) throw new RequestBodyTooLargeError()
   if (request.body === null) return ''
 
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
+  let aborted = false
+  let rejectAbort: ((reason?: unknown) => void) | undefined
+  const abortPromise = new Promise<never>((_, reject) => { rejectAbort = reject })
+  const cancelReader = () => {
+    try { void reader.cancel().catch(() => {}) } catch {}
+  }
+  const onAbort = () => {
+    aborted = true
+    rejectAbort?.(new RequestBodyAbortedError())
+    cancelReader()
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+
   try {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
+      let result: ReadableStreamReadResult<Uint8Array>
+      try {
+        result = await Promise.race([reader.read(), abortPromise])
+      } catch (error) {
+        if (aborted || signal.aborted) throw new RequestBodyAbortedError()
+        throw error
+      }
+      if (signal.aborted || aborted) throw new RequestBodyAbortedError()
+      if (result.done) break
+      size += result.value.byteLength
       if (size > MAX_SYNC_REQUEST_BODY_BYTES) {
-        try { await reader.cancel() } catch {}
+        cancelReader()
         throw new RequestBodyTooLargeError()
       }
-      chunks.push(value)
+      chunks.push(result.value)
     }
   } catch (error) {
-    try { await reader.cancel() } catch {}
+    cancelReader()
+    if (aborted || signal.aborted) throw new RequestBodyAbortedError()
     throw error
+  } finally {
+    signal.removeEventListener('abort', onAbort)
   }
 
   const bytes = new Uint8Array(size)
@@ -103,11 +137,10 @@ const exceedsSyncItemLimit = (items: readonly unknown[]): boolean => items.lengt
  * fail instead of being truncated.
  */
 const responseFor = async (repositories: SyncRepositories): Promise<SyncRequest> => {
-  const loadLimit = MAX_SYNC_ITEMS_PER_TYPE + 1
   const [cards, reviewActions, sessions] = await Promise.all([
-    repositories.cards.loadAllWithUpdatedAt(loadLimit),
-    repositories.reviewActions.loadAllWithUpdatedAt(loadLimit),
-    repositories.sessions.loadAllWithUpdatedAt(loadLimit),
+    repositories.cards.loadAllWithUpdatedAt(MAX_SYNC_LOAD_LIMIT),
+    repositories.reviewActions.loadAllWithUpdatedAt(MAX_SYNC_LOAD_LIMIT),
+    repositories.sessions.loadAllWithUpdatedAt(MAX_SYNC_LOAD_LIMIT),
   ])
   if (exceedsSyncItemLimit(cards) || exceedsSyncItemLimit(reviewActions) || exceedsSyncItemLimit(sessions)) {
     throw new SyncResponseTooLargeError()
@@ -117,11 +150,66 @@ const responseFor = async (repositories: SyncRepositories): Promise<SyncRequest>
       throw new SyncResponseTooLargeError()
     }
   }
-  return {
-    cards: cards.map(({ card, updatedAt }) => ({ card: serializeCard(card), updatedAt: updatedAt.toISOString() })),
-    reviewActions: reviewActions.map(({ action, updatedAt }) => ({ action: serializeReviewAction(action), updatedAt: updatedAt.toISOString() })),
-    sessions: sessions.map(({ session, updatedAt }) => ({ session: serializeReadingSession(session), updatedAt: updatedAt.toISOString() })),
+
+  // Validate and size records one at a time. Besides avoiding a second full
+  // parsed response, this checks the exact compact JSON envelope that GET will
+  // return before the final response string is materialized.
+  const response: SyncRequest = { cards: [], reviewActions: [], sessions: [] }
+  const encoder = new TextEncoder()
+  let responseBytes = encoder.encode('{"cards":[').byteLength
+  const appendRecord = <T>(target: T[], record: T): void => {
+    let serialized: string
+    try {
+      serialized = JSON.stringify(record)
+    } catch {
+      throw new SyncResponseTooLargeError()
+    }
+    const addition = `${target.length === 0 ? '' : ','}${serialized}`
+    responseBytes += encoder.encode(addition).byteLength
+    if (responseBytes > MAX_SYNC_RESPONSE_BODY_BYTES) throw new SyncResponseTooLargeError()
+    target.push(record)
   }
+  const appendSection = (section: string): void => {
+    responseBytes += encoder.encode(section).byteLength
+    if (responseBytes > MAX_SYNC_RESPONSE_BODY_BYTES) throw new SyncResponseTooLargeError()
+  }
+
+  try {
+    for (const { card, updatedAt } of cards) {
+      const entry = parseSyncRequest({
+        cards: [{ card: serializeCard(card), updatedAt: updatedAt.toISOString() }],
+        reviewActions: [],
+        sessions: [],
+      }).cards[0]
+      if (entry === undefined) throw new SyncResponseTooLargeError()
+      appendRecord(response.cards, entry)
+    }
+    appendSection('],"reviewActions":[')
+    for (const { action, updatedAt } of reviewActions) {
+      const entry = parseSyncRequest({
+        cards: [],
+        reviewActions: [{ action: serializeReviewAction(action), updatedAt: updatedAt.toISOString() }],
+        sessions: [],
+      }).reviewActions[0]
+      if (entry === undefined) throw new SyncResponseTooLargeError()
+      appendRecord(response.reviewActions, entry)
+    }
+    appendSection('],"sessions":[')
+    for (const { session, updatedAt } of sessions) {
+      const entry = parseSyncRequest({
+        cards: [],
+        reviewActions: [],
+        sessions: [{ session: serializeReadingSession(session), updatedAt: updatedAt.toISOString() }],
+      }).sessions[0]
+      if (entry === undefined) throw new SyncResponseTooLargeError()
+      appendRecord(response.sessions, entry)
+    }
+    appendSection(']}')
+  } catch (error) {
+    if (error instanceof SyncResponseTooLargeError) throw error
+    throw new SyncResponseTooLargeError()
+  }
+  return response
 }
 
 const writeBatch = async (repositories: SyncRepositories, payload: SyncRequest): Promise<void> => {
@@ -159,11 +247,7 @@ export const registerSyncRoutes = (
       await next()
       return
     }
-    try {
-      if (new URL(origin).origin !== new URL(c.env.APP_URL).origin) {
-        return c.json({ error: FORBIDDEN_ERROR }, 403)
-      }
-    } catch {
+    if (!sameOrigin(origin, c.env.APP_URL)) {
       return c.json({ error: FORBIDDEN_ERROR }, 403)
     }
     await next()

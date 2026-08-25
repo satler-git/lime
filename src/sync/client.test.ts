@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  MAX_SYNC_FIELD_BYTES,
   MAX_SYNC_ITEMS_PER_TYPE,
+  MAX_SYNC_RECORD_BYTES,
   MAX_SYNC_REQUEST_BODY_BYTES,
   MAX_SYNC_RESPONSE_BODY_BYTES,
   SyncClient,
@@ -69,6 +71,36 @@ describe('SyncClient', () => {
     expect(() => new SyncClient({ baseUrl: 'https://evil.example', origin: 'https://app.example.test', fetch: fetcher })).toThrow('same-origin')
     for (const baseUrl of ['//evil.example', '//app.example.test', '///app.example.test']) {
       expect(() => new SyncClient({ baseUrl, origin: 'https://app.example.test', fetch: fetcher })).toThrow(/protocol-relative/i)
+    }
+    for (const baseUrl of ['\\\\evil.example', 'https:\\\\evil.example', 'https://app.example.test\\deployment']) {
+      expect(() => new SyncClient({ baseUrl, origin: 'https://app.example.test', fetch: fetcher })).toThrow(/backslash/i)
+    }
+    for (const baseUrl of [
+      '/deployment?query',
+      '/deployment#fragment',
+      '/deployment path',
+      '/deployment\tpath',
+      'https://app.example.test\u0000/deployment',
+    ]) {
+      expect(() => new SyncClient({ baseUrl, origin: 'https://app.example.test', fetch: fetcher })).toThrow(/(?:query|fragment|whitespace|control)/i)
+    }
+    for (const baseUrl of [
+      'https://user@app.example.test',
+      'https://:password@app.example.test',
+      'https://@app.example.test',
+      'https://:@app.example.test',
+    ]) {
+      expect(() => new SyncClient({ baseUrl, origin: 'https://app.example.test', fetch: fetcher })).toThrow(/credentials/i)
+    }
+    for (const origin of [
+      'https://user@app.example.test',
+      'https://:@app.example.test',
+      'https://app.example.test/',
+      'https://app.example.test/path',
+      'https://app.example.test?query',
+      'https://app.example.test#fragment',
+    ]) {
+      expect(() => new SyncClient({ baseUrl: '/deployment', origin, fetch: fetcher })).toThrow(/origin/i)
     }
     expect(() => new SyncClient({ baseUrl: 'https://app.example.test', fetch: fetcher })).toThrow('expected origin')
     expect(fetcher).not.toHaveBeenCalled()
@@ -152,6 +184,30 @@ describe('SyncClient', () => {
     expect(error).toBeInstanceOf(SyncClientError)
     expect((error as Error).message).toBe('Sync authentication required')
     expect(serializeErrorGraph(error)).not.toContain(secret)
+  })
+
+  it('cancels sync response bodies on 401, 413, and media-type failures', async () => {
+    const responseFor = (status: number, contentType?: string) => {
+      const cancel = vi.fn()
+      const stream = new ReadableStream<Uint8Array>({ cancel })
+      const response = new Response(stream, {
+        status,
+        headers: contentType === undefined ? {} : { 'Content-Type': contentType },
+      })
+      return { response, cancel }
+    }
+
+    const unauthorized = responseFor(401, 'application/json')
+    await expect(new SyncClient({ fetch: vi.fn<SyncFetch>().mockResolvedValue(unauthorized.response) }).pull()).rejects.toBeInstanceOf(SyncUnauthorizedError)
+    const tooLarge = responseFor(413, 'application/json')
+    await expect(new SyncClient({ fetch: vi.fn<SyncFetch>().mockResolvedValue(tooLarge.response) }).pull()).rejects.toBeInstanceOf(SyncPayloadTooLargeError)
+    const wrongType = responseFor(200, 'text/html')
+    await expect(new SyncClient({ fetch: vi.fn<SyncFetch>().mockResolvedValue(wrongType.response) }).pull()).rejects.toBeInstanceOf(SyncInvalidResponseError)
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(unauthorized.cancel).toHaveBeenCalled()
+    expect(tooLarge.cancel).toHaveBeenCalled()
+    expect(wrongType.cancel).toHaveBeenCalled()
   })
 
   it('rejects malformed responses without retaining response details', async () => {
@@ -246,5 +302,26 @@ describe('SyncClient', () => {
     const client = new SyncClient({ fetch: fetcher })
 
     await expect(client.pull()).rejects.toBeInstanceOf(SyncInvalidResponseError)
+  })
+
+  it('reports an abort that happens after headers while reading response chunks', async () => {
+    const controller = new AbortController()
+    const stream = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode('{'))
+      },
+    })
+    const fetcher = vi.fn<SyncFetch>(async () => new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const client = new SyncClient({ fetch: fetcher })
+    const pending = client.pull(controller.signal)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+
+    const error = await pending.catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(SyncClientError)
+    expect((error as SyncClientError).kind).toBe('aborted')
   })
 })

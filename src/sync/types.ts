@@ -50,8 +50,14 @@ export type SyncBatchResponse = {
 
 export const MAX_SYNC_REQUEST_BODY_BYTES = 1 * 1024 * 1024
 export const MAX_SYNC_RESPONSE_BODY_BYTES = 4 * 1024 * 1024
+/** Maximum UTF-8 bytes in any user-controlled string field in a sync record. */
+export const MAX_SYNC_FIELD_BYTES = 8 * 1024
+/** Maximum UTF-8 bytes in one serialized sync envelope, including updatedAt. */
+export const MAX_SYNC_RECORD_BYTES = 64 * 1024
 /** Explicit current sync hard cap: at most this many records per top-level type per batch or GET response; no cursor protocol yet. */
 export const MAX_SYNC_ITEMS_PER_TYPE = 1_000
+/** Maximum repository read size: one extra record lets GET detect an over-cap result. */
+export const MAX_SYNC_LOAD_LIMIT = MAX_SYNC_ITEMS_PER_TYPE + 1
 export const MAX_SYNC_CARD_IDS_PER_SESSION = 1_000
 export const MAX_SYNC_LOOKUP_EVENTS_PER_SESSION = 1_000
 
@@ -70,7 +76,20 @@ export class SyncValidationError extends Error {
 const invalid = (): never => { throw new SyncValidationError() }
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid()
-const stringValue = (value: unknown): string => typeof value === 'string' && value.trim().length > 0 ? value : invalid()
+const utf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength
+const boundedRecord = <T>(value: T): T => {
+  try {
+    const serialized = JSON.stringify(value)
+    if (serialized === undefined || utf8ByteLength(serialized) > MAX_SYNC_RECORD_BYTES) invalid()
+  } catch {
+    invalid()
+  }
+  return value
+}
+const stringValue = (value: unknown): string => {
+  if (typeof value !== 'string' || value.trim().length === 0 || utf8ByteLength(value) > MAX_SYNC_FIELD_BYTES) invalid()
+  return value as string
+}
 const numberValue = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : invalid()
 const nonNegativeNumberValue = (value: unknown): number => {
   const number = numberValue(value)
@@ -100,16 +119,16 @@ const oneOf = <T extends string>(value: unknown, values: readonly T[]): T =>
 
 const parsePosition = (value: unknown): TextPosition => {
   const input = record(value)
-  return {
+  return boundedRecord({
     paragraph: nonNegativeIntegerValue(input.paragraph),
     character: nonNegativeIntegerValue(input.character),
-  }
+  })
 }
 
 const parseCard = (value: unknown): SerializedCard => {
   const input = record(value)
   const lastReview = nullableDateString(input.lastReview)
-  return {
+  return boundedRecord({
     id: stringValue(input.id),
     word: stringValue(input.word),
     createdAt: dateString(input.createdAt),
@@ -123,12 +142,12 @@ const parseCard = (value: unknown): SerializedCard => {
     lapses: nonNegativeIntegerValue(input.lapses),
     state: oneOf(input.state, cardStates),
     lastReview,
-  }
+  })
 }
 
 const parseAction = (value: unknown): SerializedReviewAction => {
   const input = record(value)
-  return {
+  return boundedRecord({
     id: stringValue(input.id),
     sessionId: stringValue(input.sessionId),
     cardId: stringValue(input.cardId),
@@ -138,19 +157,19 @@ const parseAction = (value: unknown): SerializedReviewAction => {
     nextState: parseCard(input.nextState),
     undone: booleanValue(input.undone),
     undoneAt: nullableDateString(input.undoneAt),
-  }
+  })
 }
 
 const parseLookupEvent = (value: unknown): SerializedLookupEvent => {
   const input = record(value)
-  return {
+  return boundedRecord({
     id: stringValue(input.id),
     word: stringValue(input.word),
     source: oneOf(input.source, lookupSources),
     position: parsePosition(input.position),
     timestamp: dateString(input.timestamp),
     inSrs: booleanValue(input.inSrs),
-  }
+  })
 }
 
 const parseSession = (value: unknown): SerializedReadingSession => {
@@ -159,7 +178,7 @@ const parseSession = (value: unknown): SerializedReadingSession => {
   if (cardIds.length > MAX_SYNC_CARD_IDS_PER_SESSION) invalid()
   const lookupEvents = arrayValue(input.lookupEvents)
   if (lookupEvents.length > MAX_SYNC_LOOKUP_EVENTS_PER_SESSION) invalid()
-  return {
+  return boundedRecord({
     id: stringValue(input.id),
     cardIds: cardIds.map(stringValue),
     status: oneOf(input.status, sessionStatuses),
@@ -169,13 +188,15 @@ const parseSession = (value: unknown): SerializedReadingSession => {
     completedAt: nullableDateString(input.completedAt),
     abandonedAt: nullableDateString(input.abandonedAt),
     lookupEvents: lookupEvents.map(parseLookupEvent),
-  }
+  })
 }
 
 const parseEnvelope = <T>(value: unknown, key: string, parser: (value: unknown) => T): { updatedAt: string; value: T } => {
   const input = record(value)
+  const updatedAt = dateString(input.updatedAt)
   const parsed = parser(input[key])
-  return { updatedAt: dateString(input.updatedAt), value: parsed }
+  boundedRecord({ updatedAt, [key]: parsed })
+  return { updatedAt, value: parsed }
 }
 
 export function parseSyncRequest(value: unknown): SyncRequest {

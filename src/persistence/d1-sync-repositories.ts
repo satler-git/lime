@@ -11,6 +11,7 @@ import {
   serializeCard,
   serializeReadingSession,
   serializeReviewAction,
+  MAX_SYNC_LOAD_LIMIT,
   type SerializedReadingSession,
   type SerializedReviewAction,
 } from '../sync/types'
@@ -70,6 +71,13 @@ const dateFromMilliseconds = (value: number): Date => {
 }
 
 const optionalDate = (value: number | null): Date | undefined => value === null ? undefined : dateFromMilliseconds(value)
+
+const validatedSyncLoadLimit = (limit: number): number => {
+  if (!Number.isSafeInteger(limit) || limit <= 0 || limit > MAX_SYNC_LOAD_LIMIT) {
+    throw new RangeError(`Sync load limit must be between 1 and ${MAX_SYNC_LOAD_LIMIT}`)
+  }
+  return limit
+}
 
 const mapCard = (row: CardRow): Card => {
   const lastReview = optionalDate(row.last_review)
@@ -172,7 +180,7 @@ export class D1CardRepository implements CardRepository {
 
   async loadAllWithUpdatedAt(limit: number): Promise<Array<{ card: Card; updatedAt: Date }>> {
     const query = 'SELECT id, word, created_at, due, stability, difficulty, elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review, updated_at FROM cards WHERE user_id = ? ORDER BY id LIMIT ?'
-    const result = await this.db.prepare(query).bind(this.userId, limit).all<CardRow>()
+    const result = await this.db.prepare(query).bind(this.userId, validatedSyncLoadLimit(limit)).all<CardRow>()
     return result.results.map((row) => ({ card: mapCard(row), updatedAt: new Date(row.updated_at) }))
   }
 
@@ -228,7 +236,7 @@ export class D1ReviewActionRepository implements ReviewActionRepository {
 
   async loadAllWithUpdatedAt(limit: number): Promise<Array<{ action: ReviewAction; updatedAt: Date }>> {
     const query = 'SELECT id, session_id, card_id, rating, timestamp, previous_state_json, next_state_json, undone, undone_at, updated_at FROM review_actions WHERE user_id = ? ORDER BY timestamp, id LIMIT ?'
-    const result = await this.db.prepare(query).bind(this.userId, limit).all<ReviewActionRow>()
+    const result = await this.db.prepare(query).bind(this.userId, validatedSyncLoadLimit(limit)).all<ReviewActionRow>()
     return result.results.map((row) => ({ action: cloneReviewAction(mapAction(row)), updatedAt: new Date(row.updated_at) }))
   }
 
@@ -284,7 +292,7 @@ export class D1ReadingSessionRepository implements ReadingSessionRepository {
 
   async loadAllWithUpdatedAt(limit: number): Promise<Array<{ session: ReadingSession; updatedAt: Date }>> {
     const query = 'SELECT id, status, created_at, started_at, quiz_started_at, completed_at, abandoned_at, card_ids_json, lookup_events_json, updated_at FROM reading_sessions WHERE user_id = ? ORDER BY created_at, id LIMIT ?'
-    const result = await this.db.prepare(query).bind(this.userId, limit).all<ReadingSessionRow>()
+    const result = await this.db.prepare(query).bind(this.userId, validatedSyncLoadLimit(limit)).all<ReadingSessionRow>()
     return result.results.map((row) => ({ session: cloneReadingSession(mapSession(row)), updatedAt: new Date(row.updated_at) }))
   }
 }
