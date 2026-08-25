@@ -169,7 +169,7 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       {application === undefined && (
         <p className="text-xs text-again" role="alert">ブラウザ環境でないと辞書管理はできません。</p>
       )}
@@ -177,11 +177,11 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
       <div>
         <p className="m-0 text-xs text-text-faint">登録済みソース</p>
         {sources.length === 0 ? (
-          <p className="m-0 mt-2 text-sm text-text-muted">登録されている辞書はありません。</p>
+          <p className="m-0 mt-4 text-sm text-text-muted">登録されている辞書はありません。</p>
         ) : (
-          <ul className="m-0 mt-2 list-none p-0">
+          <ul className="m-0 mt-4 list-none space-y-2 p-0">
             {sources.map((source, index) => (
-              <li key={source.id} className="flex items-center gap-2 rounded-[7px] border border-line bg-surface p-3">
+              <li key={source.id} className="flex items-center gap-3 rounded-[7px] border border-line bg-surface p-4">
                 <button
                   type="button"
                   onClick={() => void toggleEnabled(source)}
@@ -194,9 +194,9 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
                 </button>
                 <div className="min-w-0 flex-1">
                   <p className="m-0 truncate text-sm font-medium text-text">{source.name}</p>
-                  <p className="m-0 text-xs text-text-faint">{sourceHint(source.format)}</p>
+                  <p className="m-0 mt-1.5 text-xs text-text-faint">{sourceHint(source.format)}</p>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => void moveSource(index, -1)}
@@ -244,7 +244,7 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
 
       <div>
         <p className="m-0 text-xs text-text-faint">プレビュー</p>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-4 flex gap-3">
           <input
             type="text"
             value={previewWord}
@@ -265,29 +265,29 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
           </button>
         </div>
         {previewData && (
-          <div className="mt-3 rounded-[8px] border border-line bg-surface p-3">
+          <div className="mt-4 rounded-[8px] border border-line bg-surface p-4">
             <p className="m-0 text-base font-medium text-text">{previewData.word}</p>
             {previewData.pronunciation && (
-              <p className="m-0 text-xs text-text-muted">{previewData.pronunciation}</p>
+              <p className="m-0 mt-1.5 text-xs text-text-muted">{previewData.pronunciation}</p>
             )}
             {previewData.partOfSpeech && (
-              <p className="m-0 text-xs text-text-faint">{previewData.partOfSpeech}</p>
+              <p className="m-0 mt-1.5 text-xs text-text-faint">{previewData.partOfSpeech}</p>
             )}
-            <p className="m-0 mt-1 text-sm text-text">{previewData.definition}</p>
+            <p className="m-0 mt-2 text-sm text-text">{previewData.definition}</p>
             {previewData.examples.length > 0 && (
-              <ul className="m-0 mt-2 list-none space-y-1 p-0">
+              <ul className="m-0 mt-3 list-none space-y-1.5 p-0">
                 {previewData.examples.map((example, index) => (
                   <li key={index} className="text-xs text-text-faint">{example}</li>
                 ))}
               </ul>
             )}
             {previewData.entries?.map((entry, index) => (
-              <div key={index} className="mt-3 border-t border-line pt-3">
-                {entry.pronunciation && <p className="m-0 text-xs text-text-muted">{entry.pronunciation}</p>}
-                {entry.partOfSpeech && <p className="m-0 text-xs text-text-faint">{entry.partOfSpeech}</p>}
-                <p className="m-0 text-sm text-text">{entry.definition}</p>
+              <div key={index} className="mt-4 border-t border-line pt-4">
+                {entry.pronunciation && <p className="m-0 mt-1.5 text-xs text-text-muted">{entry.pronunciation}</p>}
+                {entry.partOfSpeech && <p className="m-0 mt-1.5 text-xs text-text-faint">{entry.partOfSpeech}</p>}
+                <p className="m-0 mt-2 text-sm text-text">{entry.definition}</p>
                 {entry.examples.length > 0 && (
-                  <ul className="m-0 mt-1 list-none space-y-1 p-0">
+                  <ul className="m-0 mt-2 list-none space-y-1.5 p-0">
                     {entry.examples.map((example, exampleIndex) => (
                       <li key={exampleIndex} className="text-xs text-text-faint">{example}</li>
                     ))}
@@ -301,15 +301,15 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
 
       <div>
         <p className="m-0 text-xs text-text-faint">新規追加</p>
-        <fieldset className="m-0 mt-2 min-w-0 border-0 p-0" aria-label="Import ソース">
+        <fieldset className="m-0 mt-4 min-w-0 border-0 p-0" aria-label="Import ソース">
           <legend className="sr-only">Import ソース</legend>
-          <div className="grid gap-2">
+          <div className="grid gap-3">
             {[
               { id: 'eijiro', name: '英辞郎', hint: 'BOOTH 版テキスト (.txt)' },
               { id: 'wiktionary', name: 'Wiktionary', hint: 'kaikki.org wiktextract JSONL (.jsonl)' },
               { id: 'yomitan', name: 'Yomitan', hint: 'Yomitan 辞書 (.zip)' },
             ].map((source) => (
-              <label key={source.id} className={`flex cursor-pointer items-center gap-2 rounded-[7px] border p-3 text-sm transition-[background-color,border-color] duration-120 hover:bg-surface-raised ${selectedSource === source.id ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}>
+              <label key={source.id} className={`flex cursor-pointer items-center gap-3 rounded-[7px] border p-4 text-sm transition-[background-color,border-color] duration-120 hover:bg-surface-raised ${selectedSource === source.id ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}>
                 <input className="sr-only" type="radio" name={`import-source-${groupId}`} value={source.id} checked={selectedSource === source.id} onChange={() => setSelectedSource(source.id)} />
                 <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selectedSource === source.id ? 'border-accent bg-accent' : 'border-text-faint'}`}>
                   {selectedSource === source.id && <span className="h-1.5 w-1.5 rounded-full bg-accent-ink" />}
@@ -321,7 +321,7 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
           </div>
         </fieldset>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -409,10 +409,10 @@ export function DictionarySourceManager({ application }: DictionarySourceManager
 
         {error && <p className="mt-3 text-xs text-again" role="alert">{error}</p>}
         {summary && (
-          <div className="mt-3 rounded-[8px] border border-line bg-surface p-3 text-sm">
+          <div className="mt-4 rounded-[8px] border border-line bg-surface p-4 text-sm">
             <p className="m-0 text-text">{summary.imported}語 import 完了</p>
-            {summary.skipped > 0 && <p className="m-0 mt-1 text-xs text-text-faint">{summary.skipped}件をスキップ</p>}
-            {summary.errorCount > 0 && <p className="m-0 mt-1 text-xs text-again">{summary.errorCount}件にエラー</p>}
+            {summary.skipped > 0 && <p className="m-0 mt-1.5 text-xs text-text-faint">{summary.skipped}件をスキップ</p>}
+            {summary.errorCount > 0 && <p className="m-0 mt-1.5 text-xs text-again">{summary.errorCount}件にエラー</p>}
           </div>
         )}
       </div>

@@ -35,7 +35,7 @@ function SettingGroup({
         <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
         <h2 id={id} className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">{title}</h2>
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-5">{children}</div>
     </section>
   )
 }
@@ -96,7 +96,7 @@ function TextInput({
   masked?: boolean
 }) {
   return (
-    <div className="grid gap-1.5">
+    <div className="grid gap-2">
       <label className="text-xs text-text-muted">{label}</label>
       <input
         className={`rounded-[7px] border border-line bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-45 ${masked ? '[-webkit-text-security:disc]' : ''}`}
@@ -138,7 +138,7 @@ function AccountSection() {
     const showPicture = pictureUrl !== null && !pictureError
 
     return (
-      <div className="grid gap-2">
+      <div className="grid gap-3">
         <div className="flex items-center gap-3">
           {showPicture ? (
             <img
@@ -155,7 +155,7 @@ function AccountSection() {
           )}
           <div className="min-w-0 flex-1">
             <p className="m-0 truncate text-sm font-medium text-text">{user.name || user.email}</p>
-            {user.name && <p className="m-0 truncate text-xs text-text-faint">{user.email}</p>}
+            {user.name && <p className="m-0 mt-1 truncate text-xs text-text-faint">{user.email}</p>}
           </div>
           <button
             type="button"
@@ -219,7 +219,7 @@ export function SettingsScreen({
             <SlidersHorizontal size={16} strokeWidth={1.8} aria-hidden="true" />
             <span>設定</span>
           </div>
-          <h1 id="settings-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+          <h1 id="settings-title" className="m-0 mt-4 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
             Settings
           </h1>
         </div>
@@ -235,13 +235,13 @@ export function SettingsScreen({
         )}
       </header>
 
-      <div className="mt-7 grid gap-4">
+      <div className="mt-7 grid gap-6">
         <SettingGroup id="dictionary-section" icon={BookOpen} title="Dictionary">
           <DictionarySourceManager application={importApplication} />
         </SettingGroup>
 
         <SettingGroup id="max-section" icon={SlidersHorizontal} title="Max">
-          <div className="grid gap-4">
+          <div className="grid gap-5">
             <NumberInput
               label="復習上限"
               value={reviewLimit}
@@ -258,7 +258,7 @@ export function SettingsScreen({
         </SettingGroup>
 
         <SettingGroup id="llm-section" icon={Sparkles} title="LLM">
-          <div className="grid gap-4">
+          <div className="grid gap-5">
             <TextInput
               label="API Endpoint"
               value={localLlm.endpoint}

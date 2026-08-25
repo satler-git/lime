@@ -46,11 +46,11 @@ const borderClasses: Record<Rating, string> = {
 export function RatingGroup({ value, onChange, compact = false, disabled = false }: RatingGroupProps) {
   const iconSize = compact ? 15 : 16
   return (
-    <div className="mt-[9px] grid grid-cols-4 gap-[5px]" role="group" aria-label="単語の理解度を評価">
+    <div className="mt-3 grid grid-cols-4 gap-3" role="group" aria-label="単語の理解度を評価">
       {options.map(({ value: optionValue, label, hint, icon: Icon }) => {
         const selected = value === optionValue
         return (
-          <button className={`flex min-h-[60px] cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[7px] border p-[7px_3px] ${colorClasses[optionValue]} transition-[background-color,border-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96] disabled:cursor-wait disabled:opacity-60 ${selected ? `${bgClasses[optionValue]} ${borderClasses[optionValue]} text-surface-raised` : 'border-transparent bg-surface'}`} key={optionValue} type="button" aria-pressed={selected} onClick={() => onChange?.(optionValue)} disabled={disabled}>
+          <button className={`flex min-h-[60px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[7px] border py-2 px-1.5 ${colorClasses[optionValue]} transition-[background-color,border-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96] disabled:cursor-wait disabled:opacity-60 ${selected ? `${bgClasses[optionValue]} ${borderClasses[optionValue]} text-surface-raised` : 'border-transparent bg-surface'}`} key={optionValue} type="button" aria-pressed={selected} onClick={() => onChange?.(optionValue)} disabled={disabled}>
             <Icon className={selected ? 'text-surface-raised' : ''} size={iconSize} strokeWidth={1.8} aria-hidden="true" />
             <span className={`text-[11px] font-medium ${selected ? 'text-surface-raised' : 'text-text'}`}>{label}</span>
             <span className={`text-[10px] ${selected ? 'text-surface-raised' : 'text-text-faint'}`}>{hint}</span>

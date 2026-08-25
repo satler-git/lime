@@ -33,7 +33,7 @@ function Section({
         <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
         <h2 className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">{title}</h2>
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-5">{children}</div>
     </section>
   )
 }
@@ -93,8 +93,8 @@ function AddSection({
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="flex gap-2">
+    <div className="grid gap-5">
+      <div className="flex gap-3">
         <input
           type="text"
           value={query}
@@ -128,7 +128,7 @@ function AddSection({
         <div className="rounded-[8px] border border-line bg-surface p-4">
           <p className="m-0 font-serif text-[22px] font-medium tracking-[-.03em]">{result.word}</p>
           {(result.pronunciation || result.partOfSpeech) && (
-            <div className="mt-1 flex flex-wrap items-baseline gap-2 text-xs text-text-faint">
+            <div className="mt-2 flex flex-wrap items-baseline gap-2 text-xs text-text-faint">
               {result.pronunciation && <span>{result.pronunciation}</span>}
               {result.partOfSpeech && <span>{result.partOfSpeech}</span>}
             </div>
@@ -136,9 +136,9 @@ function AddSection({
           <p className="m-0 mt-2 text-sm leading-normal text-text">{result.definition}</p>
           {result.examples.length > 0 && (
             <div className="mt-3 border-t border-line pt-3">
-              <p className="m-0 flex items-center gap-1.5 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={12} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
+              <p className="m-0 flex items-center gap-2 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={12} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
               {result.examples.slice(0, 3).map((example, index) => (
-                <p key={index} className="m-0 mt-2 text-xs leading-normal text-text-muted">{example}</p>
+                <p key={index} className="m-0 mt-3 text-xs leading-normal text-text-muted">{example}</p>
               ))}
             </div>
           )}
@@ -228,12 +228,12 @@ function ImportSection({ cardService, onImported }: { cardService: CardService; 
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <fieldset className="m-0 border-0 p-0" aria-label="Import 形式">
         <legend className="sr-only">Import 形式</legend>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           {(['csv', 'apkg'] as ImportFormat[]).map((f) => (
-            <label key={f} className={`flex cursor-pointer items-center gap-2 rounded-[7px] border p-3 text-sm transition-[background-color,border-color] duration-120 hover:bg-surface-raised ${format === f ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}>
+            <label key={f} className={`flex cursor-pointer items-center gap-3 rounded-[7px] border p-4 text-sm transition-[background-color,border-color] duration-120 hover:bg-surface-raised ${format === f ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}>
               <input className="sr-only" type="radio" name="import-format" value={f} checked={format === f} onChange={() => setFormat(f)} />
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${format === f ? 'border-accent bg-accent' : 'border-text-faint'}`}>
                 {format === f && <span className="h-1.5 w-1.5 rounded-full bg-accent-ink" />}
@@ -254,7 +254,7 @@ function ImportSection({ cardService, onImported }: { cardService: CardService; 
         />
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <input ref={fileInputRef} type="file" className="sr-only" accept={format === 'apkg' ? '.apkg' : '.csv,.txt'} onChange={(event) => handleFileChange(event.target.files?.[0])} aria-label="ファイルを選択" />
         <button
           type="button"
@@ -277,9 +277,9 @@ function ImportSection({ cardService, onImported }: { cardService: CardService; 
 
       {error && <p className="text-xs text-again" role="alert">{error}</p>}
       {summary && (
-        <div className="rounded-[8px] border border-line bg-surface p-3 text-sm">
+        <div className="rounded-[8px] border border-line bg-surface p-4 text-sm">
           <p className="m-0 text-text">{summary.added} 語を追加しました</p>
-          {summary.skipped > 0 && <p className="m-0 mt-1 text-xs text-text-faint">{summary.skipped} 語をスキップ（既に存在または読み取れません）</p>}
+          {summary.skipped > 0 && <p className="m-0 mt-1.5 text-xs text-text-faint">{summary.skipped} 語をスキップ（既に存在または読み取れません）</p>}
         </div>
       )}
     </div>
@@ -375,7 +375,7 @@ function ListSection({
               return (
                 <div
                   key={card.id}
-                  className="absolute inset-x-0 flex items-center justify-between gap-3 border-b border-line px-3 py-2.5 last:border-b-0"
+                  className="absolute inset-x-0 flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
                   style={{ top: actualIndex * ROW_HEIGHT, height: ROW_HEIGHT }}
                 >
                   <span className="min-w-0 truncate text-sm text-text" title={card.word}>{card.word}</span>
@@ -415,7 +415,7 @@ export function CardManagerView({ cardService, dictionaryApplication, onBack, on
             <List size={16} strokeWidth={1.8} aria-hidden="true" />
             <span>カード管理</span>
           </div>
-          <h1 id={titleId} className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+          <h1 id={titleId} className="m-0 mt-4 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
             カードを追加・管理
           </h1>
         </div>
@@ -434,7 +434,7 @@ export function CardManagerView({ cardService, dictionaryApplication, onBack, on
       {cardService === undefined ? (
         <p className="mt-8 text-sm text-text-muted">カードサービスを読み込んでいます…</p>
       ) : (
-        <div className="mt-7 grid gap-5">
+        <div className="mt-7 grid gap-6">
           <Section icon={Search} title="単語を追加">
             <AddSection cardService={cardService} dictionaryApplication={dictionaryApplication} onAdded={handleChanged} />
           </Section>

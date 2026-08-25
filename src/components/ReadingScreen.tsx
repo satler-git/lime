@@ -26,7 +26,7 @@ function Placeholder() {
         <BookOpen size={16} strokeWidth={1.8} aria-hidden="true" />
         <span>読解</span>
       </div>
-      <h1 id="reading-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+      <h1 id="reading-title" className="m-0 mt-4 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
         読解を始める
       </h1>
       <p className="mt-4 text-sm leading-relaxed text-text-muted">
@@ -43,7 +43,7 @@ function ErrorState({ error }: { error: string }) {
         <BookOpen size={16} strokeWidth={1.8} aria-hidden="true" />
         <span>読解</span>
       </div>
-      <h1 id="reading-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+      <h1 id="reading-title" className="m-0 mt-4 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
         読解を始める
       </h1>
       <p className="mt-4 text-sm leading-relaxed text-text-muted" role="alert">

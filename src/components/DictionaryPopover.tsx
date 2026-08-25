@@ -127,7 +127,7 @@ export function DictionaryPopover({ word, reviewable, anchor, rating, onRate, on
     }
   }
 
-  const headerClass = inlineClose ? 'flex flex-wrap items-baseline gap-2.5 pt-1' : 'flex flex-wrap items-baseline gap-2.5 pr-10 pt-1'
+  const headerClass = inlineClose ? 'flex flex-wrap items-baseline gap-3 pt-1' : 'flex flex-wrap items-baseline gap-3 pr-10 pt-1'
   const closeButton = (className: string) => (
     <Popover.Close asChild>
       <button ref={closeButtonRef} className={className} type="button" aria-label="辞書を閉じる"><X size={17} strokeWidth={1.8} aria-hidden="true" /></button>
@@ -140,7 +140,7 @@ export function DictionaryPopover({ word, reviewable, anchor, rating, onRate, on
         <span className="fixed h-px w-px opacity-0" style={{ top: popoverAnchor.bottom, left: popoverAnchor.left }} aria-hidden="true" />
       </Popover.Anchor>
       <Popover.Portal>
-        <Popover.Content ref={panelRef} aria-labelledby={titleId} aria-describedby={actionError ? actionErrorId : undefined} className="relative z-50 max-h-[min(680px,calc(100vh-108px))] w-[min(340px,calc(100vw-24px))] overflow-y-auto rounded-[10px] border border-[#485044] bg-surface-raised p-[18px] text-text shadow-[0_18px_48px_rgba(0,0,0,.45)] data-[state=open]:animate-[dictionary-popover-in_160ms_cubic-bezier(.2,0,0,1)_both]" side="bottom" align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={(event) => { event.preventDefault(); closeButtonRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); onRestoreFocus?.() }}>
+        <Popover.Content ref={panelRef} aria-labelledby={titleId} aria-describedby={actionError ? actionErrorId : undefined} className="relative z-50 max-h-[min(680px,calc(100vh-108px))] w-[min(340px,calc(100vw-24px))] overflow-y-auto rounded-[10px] border border-[#485044] bg-surface-raised p-5 text-text shadow-[0_18px_48px_rgba(0,0,0,.45)] data-[state=open]:animate-[dictionary-popover-in_160ms_cubic-bezier(.2,0,0,1)_both]" side="bottom" align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={(event) => { event.preventDefault(); closeButtonRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); onRestoreFocus?.() }}>
           {!inlineClose && <div className="absolute right-3 top-3">{closeButton(closeButtonClass)}</div>}
           <div className={headerClass}>
             <h2 ref={titleRef} id={titleId} className="m-0 min-w-0 max-w-full break-words font-serif text-[34px] font-medium tracking-[-.04em]">{word.word}</h2>
@@ -154,10 +154,10 @@ export function DictionaryPopover({ word, reviewable, anchor, rating, onRate, on
                   {entry.partOfSpeech && <span className="text-xs text-text-muted">{entry.partOfSpeech}</span>}
                 </div>
               )}
-              <p className="mt-1 text-[15px] leading-normal">{entry.definition}</p>
+              <p className="mt-2 text-[15px] leading-normal">{entry.definition}</p>
               {entry.examples.length > 0 && (
-                <div className="mt-[18px] border-t border-line pt-[15px]">
-                  <p className="m-0 flex items-center gap-1.5 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={14} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
+                <div className="mt-5 border-t border-line pt-4">
+                  <p className="m-0 flex items-center gap-2 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={14} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
                   {entry.examples.map((example, exampleIndex) => {
                     const paragraph = exampleOffset + exampleIndex
                     return (
@@ -173,12 +173,12 @@ export function DictionaryPopover({ word, reviewable, anchor, rating, onRate, on
           {actionError && <p id={actionErrorId} className="mt-3 text-xs text-again" role="alert">{actionError}</p>}
           {actionPending && <p className="mt-3 text-xs text-text-faint" role="status" aria-live="polite">{pendingAction === 'undo' ? '評価を元に戻しています' : '評価を保存しています'}</p>}
           {canAdd ? (
-            <button className="mt-[15px] flex min-h-10 w-full cursor-pointer items-center justify-center gap-[7px] rounded-[7px] border-0 bg-accent px-3 text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 animate-[dictionary-add-in_180ms_cubic-bezier(.2,0,0,1)_both] hover:bg-accent-strong active:scale-[.98]" type="button" onClick={onAddToSrs}><BookOpen size={15} strokeWidth={2} aria-hidden="true" /> SRSに追加</button>
+            <button className="mt-4 flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[7px] border-0 bg-accent px-4 text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 animate-[dictionary-add-in_180ms_cubic-bezier(.2,0,0,1)_both] hover:bg-accent-strong active:scale-[.98]" type="button" onClick={onAddToSrs}><BookOpen size={15} strokeWidth={2} aria-hidden="true" /> SRSに追加</button>
           ) : canReview && currentRating !== undefined && onUndo !== undefined && !actionPending ? (
-            <button className="mt-[18px] flex min-h-10 w-full cursor-pointer items-center justify-center gap-[7px] rounded-[7px] border border-accent bg-[rgba(194,230,111,.11)] px-3 text-xs font-semibold text-accent transition-[background-color,border-color,transform] duration-120 animate-[dictionary-undo-in_180ms_cubic-bezier(.2,0,0,1)_both] hover:bg-[rgba(194,230,111,.18)] active:scale-[.98] disabled:cursor-wait disabled:opacity-60" type="button" onClick={() => void handleUndo()} disabled={actionPending} aria-busy={pendingAction === 'undo'}><RotateCcw size={15} strokeWidth={2} aria-hidden="true" /> {`${ratingLabels[currentRating]}を元に戻す`}</button>
+            <button className="mt-5 flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[7px] border border-accent bg-[rgba(194,230,111,.11)] px-4 text-xs font-semibold text-accent transition-[background-color,border-color,transform] duration-120 animate-[dictionary-undo-in_180ms_cubic-bezier(.2,0,0,1)_both] hover:bg-[rgba(194,230,111,.18)] active:scale-[.98] disabled:cursor-wait disabled:opacity-60" type="button" onClick={() => void handleUndo()} disabled={actionPending} aria-busy={pendingAction === 'undo'}><RotateCcw size={15} strokeWidth={2} aria-hidden="true" /> {`${ratingLabels[currentRating]}を元に戻す`}</button>
           ) : canReview ? (
-            <div className="mt-[18px] border-t border-line pt-[15px] animate-[dictionary-rating-in_180ms_cubic-bezier(.2,0,0,1)_both]">
-              <p className="m-0 flex items-center gap-1.5 text-[10px] font-semibold tracking-[.1em] text-text-faint">理解度</p>
+            <div className="mt-5 border-t border-line pt-4 animate-[dictionary-rating-in_180ms_cubic-bezier(.2,0,0,1)_both]">
+              <p className="m-0 flex items-center gap-2 text-[10px] font-semibold tracking-[.1em] text-text-faint">理解度</p>
               <RatingGroup value={currentRating} onChange={(nextRating) => void handleRate(nextRating)} compact disabled={actionPending} />
             </div>
           ) : null}

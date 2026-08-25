@@ -49,8 +49,8 @@ function LimitAdjustModal({ open, title, available, value, disabled, onChange, o
       aria-label={title}
     >
       <h2 className="m-0 text-sm font-semibold tracking-[.02em]">{title}</h2>
-      <p className="m-0 mt-1 text-xs text-text-faint">利用可能: {available}語</p>
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <p className="m-0 mt-2 text-xs text-text-faint">利用可能: {available}語</p>
+      <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-xs text-text-faint">上限</span>
         <div className="flex items-center gap-2">
           <input
@@ -121,8 +121,8 @@ export function WordCountSummary({
   }) => (
     <div className="rounded-[10px] border border-line bg-surface p-4">
       <div className="text-xs text-text-muted">{label}</div>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <div className="flex items-baseline gap-1">
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-1.5">
           <span className="text-[30px] font-semibold leading-9 text-text">{studyCount(count, max)}</span>
           <span className="text-sm text-text-faint">語</span>
         </div>
@@ -142,7 +142,7 @@ export function WordCountSummary({
   return (
     <section aria-labelledby="word-count-title">
       <h2 id="word-count-title" className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">今日の単語</h2>
-      <div className="mt-3 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-4">
         <Card label="復習" count={reviewCount} max={reviewMax} category="review" />
         <Card label="新出" count={newCount} max={newMax} category="new" />
       </div>

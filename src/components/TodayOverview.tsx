@@ -60,13 +60,13 @@ export function TodayOverview({
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="m-0 text-xs font-semibold tracking-[.1em] text-accent">LIME</p>
-          <h1 id="today-overview-title" className="m-0 mt-2 font-serif text-[clamp(36px,8vw,52px)] font-normal leading-none tracking-[-.04em]">今日の学習</h1>
+          <h1 id="today-overview-title" className="m-0 mt-4 font-serif text-[clamp(36px,8vw,52px)] font-normal leading-none tracking-[-.04em]">今日の学習</h1>
         </div>
         <button className="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96]" type="button" aria-label="設定を開く" onClick={onOpenSettings}><Settings2 size={19} strokeWidth={1.8} aria-hidden="true" /></button>
       </header>
       <div className="mt-9 grid gap-6">
         {(syncError || telemetryError) && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+          <div className="grid gap-1.5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
             {syncError && <p className="m-0">{syncError}</p>}
             {telemetryError && <p className="m-0">{telemetryError}</p>}
           </div>
@@ -85,8 +85,8 @@ export function TodayOverview({
         <AddCardButton onClick={onOpenCards} disabled={cardService === undefined || onOpenCards === undefined} />
         <section aria-labelledby="recent-sessions-title">
           <div className="flex items-center justify-between"><h2 id="recent-sessions-title" className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">最近の学習</h2><span className="text-xs text-text-faint">今日</span></div>
-          <div className="mt-3 divide-y divide-line border-y border-line">
-            {recentSessions.map((session) => <div className="flex items-center justify-between gap-4 py-3 text-sm" key={session.cycle}><div className="min-w-0"><p className="m-0 truncate text-text">{session.title}</p><p className="m-0 mt-1 text-xs text-text-faint">{session.cycle}セット目 · {session.words}語</p></div>{session.score && <span className="shrink-0 tabular-nums text-xs text-text-muted">{session.score}</span>}</div>)}
+          <div className="mt-4 divide-y divide-line border-y border-line">
+            {recentSessions.map((session) => <div className="flex items-center justify-between gap-4 py-3 text-sm" key={session.cycle}><div className="min-w-0"><p className="m-0 truncate text-text">{session.title}</p><p className="m-0 mt-1.5 text-xs text-text-faint">{session.cycle}セット目 · {session.words}語</p></div>{session.score && <span className="shrink-0 tabular-nums text-xs text-text-muted">{session.score}</span>}</div>)}
           </div>
         </section>
       </div>

@@ -560,7 +560,7 @@ export function ReadingFlow({
             <span className="block h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${Math.min(100, Math.max(0, (cycle / Math.max(totalCycles, 1)) * 100))}%` }} />
           </div>
           <p className="mb-0 mt-4 text-xs text-text-faint">{articleWordCount}語</p>
-          <h1 className="m-0 mt-2 max-w-[680px] font-serif text-[clamp(32px,7vw,52px)] font-normal leading-[1.05] tracking-[-.045em]">{title}</h1>
+          <h1 className="m-0 mt-3 max-w-[680px] font-serif text-[clamp(32px,7vw,52px)] font-normal leading-[1.05] tracking-[-.045em]">{title}</h1>
         </header>
 
         <article className="font-serif text-[clamp(20px,3.4vw,26px)] leading-[1.75] text-text" aria-label="読解本文">
@@ -626,7 +626,7 @@ export function ReadingFlow({
         {phase === 'complete' && (
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="reading-complete-title">
             <p className="m-0 text-[10px] font-semibold tracking-[.1em] text-accent">読解完了</p>
-            <h2 id="reading-complete-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">{displayScore === undefined ? '採点結果不明' : `${displayScore} / ${quiz?.questions.length ?? 5}問 正解`}</h2>
+            <h2 id="reading-complete-title" className="m-0 mt-4 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">{displayScore === undefined ? '採点結果不明' : `${displayScore} / ${quiz?.questions.length ?? 5}問 正解`}</h2>
             {batchLoading && <p className="mt-4 text-sm text-text-muted" role="status">調べた単語を読み込んでいます</p>}
             {!batchLoading && batchSelection === undefined && (
               <div className="mt-4" aria-label="一括追加候補の再読み込み">
