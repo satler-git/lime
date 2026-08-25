@@ -161,6 +161,13 @@ export class IndexedDbCardRepository implements CardRepository {
     return this.save(card)
   }
 
+  async delete(id: CardId): Promise<void> {
+    const database = await this.open()
+    const transaction = database.transaction(this.storeName, 'readwrite')
+    transaction.objectStore(this.storeName).delete(id)
+    await transactionDone(transaction)
+  }
+
   async close(): Promise<void> {
     const cachedDatabase = this.database
     const database = await cachedDatabase?.catch(() => undefined)

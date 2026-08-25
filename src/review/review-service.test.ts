@@ -33,6 +33,10 @@ class TestCardRepository implements CardRepository {
   async restore(card: Card): Promise<void> {
     await this.save(card)
   }
+
+  async delete(id: CardId): Promise<void> {
+    this.cards.delete(id)
+  }
 }
 
 const makeSession = (status: ReadingSession['status'] = 'reading'): ReadingSession => ({

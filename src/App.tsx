@@ -58,37 +58,38 @@ export default function App({ initialRoute = 'today' }: AppProps) {
     saveSettings({ reviewLimit, newLimit, llmConfig })
   }, [reviewLimit, newLimit, llmConfig])
 
-  useEffect(() => {
-    setDueCards([])
-    setNewCards([])
-
+  const loadCards = useCallback(async (signal?: AbortSignal): Promise<void> => {
     if (cardService === undefined || cardRepository === undefined) {
+      setDueCards([])
+      setNewCards([])
       return
     }
 
-    let cancelled = false
-    const loadCards = async (): Promise<void> => {
-      try {
-        const now = new Date()
-        const all = await cardRepository.loadAll()
-        if (cancelled) return
-        setDueCards(
-          all
-            .filter((card) => card.due.getTime() <= now.getTime())
-            .sort((a, b) => a.due.getTime() - b.due.getTime()),
-        )
-        setNewCards(all.filter((card) => card.state === 'new'))
-      } catch {
-        if (!cancelled) {
-          setDueCards([])
-          setNewCards([])
-        }
-      }
+    try {
+      const now = new Date()
+      const all = await cardRepository.loadAll()
+      if (signal?.aborted) return
+      setDueCards(
+        all
+          .filter((card) => card.due.getTime() <= now.getTime())
+          .sort((a, b) => a.due.getTime() - b.due.getTime()),
+      )
+      setNewCards(all.filter((card) => card.state === 'new'))
+    } catch {
+      if (signal?.aborted) return
+      setDueCards([])
+      setNewCards([])
     }
-
-    void loadCards()
-    return () => { cancelled = true }
   }, [cardService, cardRepository])
+
+  useEffect(() => {
+    setDueCards([])
+    setNewCards([])
+    if (cardService === undefined || cardRepository === undefined) return
+    const controller = new AbortController()
+    void loadCards(controller.signal)
+    return () => { controller.abort() }
+  }, [cardService, cardRepository, loadCards])
 
   const client = useMemo<TextGenerationClient | undefined>(() => {
     if (
@@ -145,6 +146,9 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           onNewLimitChange={setNewLimit}
           onStartReading={() => navigate('reading')}
           onOpenSettings={() => navigate('settings')}
+          cardService={cardService}
+          dictionaryApplication={importApplication}
+          onCardsChanged={() => { void loadCards() }}
         />
       )}
       {route === 'reading' && (

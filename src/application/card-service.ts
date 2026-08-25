@@ -42,6 +42,10 @@ export class CardService implements CardCreator {
     return existing ?? this.create(input)
   }
 
+  loadAll(): Promise<Card[]> {
+    return this.repository.loadAll()
+  }
+
   async review(id: CardId, rating: Rating, now: Date): Promise<ReviewResult> {
     const card = await this.repository.load(id)
     if (card === null) {
@@ -56,5 +60,9 @@ export class CardService implements CardCreator {
   async restore(previous: Card): Promise<Card> {
     await this.repository.restore(previous)
     return previous
+  }
+
+  async delete(id: CardId): Promise<void> {
+    await this.repository.delete(id)
   }
 }

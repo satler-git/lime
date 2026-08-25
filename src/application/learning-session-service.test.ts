@@ -45,6 +45,10 @@ class InMemoryCards implements CardRepository {
   async restore(card: Card): Promise<void> {
     return this.save(card)
   }
+
+  async delete(id: string): Promise<void> {
+    this.cards.delete(id)
+  }
 }
 
 class FaultInjectingSessionRepository implements ReadingSessionRepository {

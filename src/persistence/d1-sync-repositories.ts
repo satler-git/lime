@@ -192,6 +192,10 @@ export class D1CardRepository implements CardRepository {
   }
 
   restore(card: Card): Promise<void> { return this.save(card) }
+
+  async delete(id: CardId): Promise<void> {
+    await this.db.prepare('DELETE FROM cards WHERE user_id = ? AND id = ?').bind(this.userId, id).run()
+  }
 }
 
 /** D1 review-action persistence scoped permanently to one authenticated user. */

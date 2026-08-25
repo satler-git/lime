@@ -12,6 +12,7 @@ export interface CardRepository extends CardLoader {
   loadAll(): Promise<Card[]>
   getDue(now: Date): Promise<Card[]>
   restore(card: Card): Promise<void>
+  delete(id: CardId): Promise<void>
   /** Optional atomic lookup-and-create operation for adapters that support it. */
   createIfAbsent?: (input: NewCard) => Promise<Card>
 }

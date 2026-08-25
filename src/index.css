@@ -32,6 +32,7 @@
   }
 
   body { @apply m-0 min-h-screen min-w-[320px] bg-background text-text; }
+  dialog::backdrop { background-color: rgba(0, 0, 0, .6); }
   button { @apply font-sans text-text; }
   button:focus-visible { @apply outline-2 outline-accent outline-offset-3; }
   button:disabled { @apply cursor-not-allowed opacity-45; }

@@ -96,6 +96,7 @@ describe('CardService', () => {
       loadAll: async () => [],
       getDue,
       restore: async () => {},
+      delete: async () => {},
     }
 
     const service = new CardService(cardRepository)
@@ -103,6 +104,37 @@ describe('CardService', () => {
     await expect(service.getDueCards(now)).resolves.toBe(dueCards)
     expect(getDue).toHaveBeenCalledTimes(1)
     expect(getDue).toHaveBeenCalledWith(now)
+  })
+
+  it('delegates loadAll to the repository', async () => {
+    const all = [createCard({ id: 'a', word: 'alpha', now: baseTime })]
+    const cardRepository: CardRepository = {
+      save: async () => {},
+      load: async () => null,
+      loadAll: async () => all,
+      getDue: async () => [],
+      restore: async () => {},
+      delete: async () => {},
+    }
+
+    const service = new CardService(cardRepository)
+    await expect(service.loadAll()).resolves.toBe(all)
+  })
+
+  it('delegates delete to the repository', async () => {
+    const deleteFn = vi.fn(async () => {})
+    const cardRepository: CardRepository = {
+      save: async () => {},
+      load: async () => null,
+      loadAll: async () => [],
+      getDue: async () => [],
+      restore: async () => {},
+      delete: deleteFn,
+    }
+
+    const service = new CardService(cardRepository)
+    await service.delete('card-1')
+    expect(deleteFn).toHaveBeenCalledWith('card-1')
   })
 
   it('delegates createIfAbsent to a repository atomic capability', async () => {
@@ -114,6 +146,7 @@ describe('CardService', () => {
       loadAll: async () => [],
       getDue: async () => [],
       restore: async () => {},
+      delete: async () => {},
       createIfAbsent,
     }
 
@@ -168,6 +201,18 @@ describe('IndexedDB card repository', () => {
 
     await expect(cardRepository.getDue(new Date('2025-01-01T00:00:00.000Z')))
       .resolves.toEqual([overdue, dueNow])
+  })
+
+  it('deletes a card by id', async () => {
+    const cardRepository = makeRepository()
+    const card = createCard({ id: 'delete-me', word: 'delete', now: baseTime })
+
+    await cardRepository.save(card)
+    await expect(cardRepository.load(card.id)).resolves.toEqual(card)
+
+    await cardRepository.delete(card.id)
+    await expect(cardRepository.load(card.id)).resolves.toBeNull()
+    await expect(cardRepository.loadAll()).resolves.toHaveLength(0)
   })
 
   it('atomically reuses one card for concurrent normalized-word creates', async () => {

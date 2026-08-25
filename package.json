@@ -20,6 +20,7 @@
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sql.js": "1.14.1",
     "ts-fsrs": "^5.4.1"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/sql.js": "1.4.11",
     "@vitejs/plugin-react": "^4.3.4",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
