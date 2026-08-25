@@ -283,6 +283,9 @@ export function SettingsScreen({
               autoComplete="off"
               onChange={(apiKey) => { updateLlm({ apiKey }) }}
             />
+            <p className="m-0 text-xs text-again" role="note">
+              API キーは localStorage に保存されます。同じブラウザの他の拡張機能や XSS があれば読み取られる可能性があるので注意してください。
+            </p>
           </div>
         </SettingGroup>
 

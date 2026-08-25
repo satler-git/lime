@@ -50,7 +50,7 @@ export function loadSettings(): Partial<StoredSettings> | undefined {
     }
 
     if (isLlmConfig(record.llmConfig)) {
-      settings.llmConfig = { ...record.llmConfig, apiKey: '' }
+      settings.llmConfig = { ...record.llmConfig }
     }
 
     return settings
@@ -67,7 +67,7 @@ export function saveSettings(settings: StoredSettings): void {
   try {
     const storable: StoredSettings = {
       ...settings,
-      llmConfig: { ...settings.llmConfig, apiKey: '' },
+      llmConfig: { ...settings.llmConfig },
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(storable))
   } catch {
