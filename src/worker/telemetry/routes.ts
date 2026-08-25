@@ -4,20 +4,62 @@ import type { AuthDependencies, Env } from '../auth/types'
 import { createD1TelemetryRepository, type TelemetryRepository } from '../../telemetry/repository'
 import {
   MAX_TELEMETRY_REQUEST_BODY_BYTES,
-  parseTelemetryBatch,
+  validateTelemetryBatch,
   type TelemetryBatch,
 } from '../../telemetry'
 
 const UNAUTHORIZED_ERROR = 'Unauthorized'
 const INVALID_TELEMETRY_ERROR = 'Invalid telemetry payload'
+const FORBIDDEN_ERROR = 'Forbidden'
 const PAYLOAD_TOO_LARGE_ERROR = 'Payload too large'
 const TELEMETRY_ERROR = 'Telemetry failed'
+const CACHE_CONTROL = 'private, no-store'
+
+class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super(PAYLOAD_TOO_LARGE_ERROR)
+    this.name = 'RequestBodyTooLargeError'
+  }
+}
+
+const contentLengthExceedsLimit = (request: Request): boolean => {
+  const contentLength = request.headers.get('Content-Length')
+  if (contentLength === null || !/^\d+$/.test(contentLength.trim())) return false
+  const length = Number(contentLength)
+  return !Number.isSafeInteger(length) || length > MAX_TELEMETRY_REQUEST_BODY_BYTES
+}
+
+/** Read an inbound body without retaining chunks or allocating a second full byte buffer. */
+const readBoundedRequestBody = async (request: Request): Promise<string> => {
+  if (contentLengthExceedsLimit(request)) throw new RequestBodyTooLargeError()
+  if (request.body === null) return ''
+
+  const bytes = new Uint8Array(MAX_TELEMETRY_REQUEST_BODY_BYTES)
+  const reader = request.body.getReader()
+  let offset = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value.byteLength > bytes.byteLength - offset) {
+        try { await reader.cancel() } catch {}
+        throw new RequestBodyTooLargeError()
+      }
+      bytes.set(value, offset)
+      offset += value.byteLength
+    }
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw error
+    try { await reader.cancel() } catch {}
+    throw error
+  }
+
+  return new TextDecoder().decode(bytes.subarray(0, offset))
+}
 
 export type TelemetryRouteDependencies = {
   auth?: AuthDependencies
   repository?: (env: Env, userId: string) => TelemetryRepository
-  /** Alias retained for consistency with the sync route dependency shape. */
-  repositories?: (env: Env, userId: string) => TelemetryRepository
 }
 
 const defaultRepository = (env: Env, userId: string): TelemetryRepository => (
@@ -35,10 +77,33 @@ export const registerTelemetryRoutes = (
   app: Hono<{ Bindings: Env }>,
   dependencies: TelemetryRouteDependencies = {},
 ): void => {
-  const repositoryFor = dependencies.repository ?? dependencies.repositories ?? defaultRepository
+  const repositoryFor = dependencies.repository ?? defaultRepository
   const auth = dependencies.auth ?? {}
 
+  app.use('/api/telemetry/batch', async (c, next) => {
+    c.header('Cache-Control', CACHE_CONTROL)
+    const origin = c.req.raw.headers.get('Origin')
+    if (c.req.method === 'POST' && origin === null) {
+      return c.json({ error: FORBIDDEN_ERROR }, 403)
+    }
+    if (origin !== null) {
+      try {
+        if (new URL(origin).origin !== new URL(c.env.APP_URL).origin) {
+          return c.json({ error: FORBIDDEN_ERROR }, 403)
+        }
+      } catch {
+        return c.json({ error: FORBIDDEN_ERROR }, 403)
+      }
+    }
+    await next()
+  })
+
   app.post('/api/telemetry/batch', async (c) => {
+    const contentType = c.req.raw.headers.get('Content-Type')
+    if (contentType === null || contentType.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
+      return c.json({ error: INVALID_TELEMETRY_ERROR }, 400)
+    }
+
     let session
     try {
       session = await authenticateSession(c, auth)
@@ -49,17 +114,15 @@ export const registerTelemetryRoutes = (
 
     let body: string
     try {
-      body = await c.req.text()
-    } catch {
+      body = await readBoundedRequestBody(c.req.raw)
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) return c.json({ error: PAYLOAD_TOO_LARGE_ERROR }, 413)
       return c.json({ error: INVALID_TELEMETRY_ERROR }, 400)
-    }
-    if (new TextEncoder().encode(body).byteLength > MAX_TELEMETRY_REQUEST_BODY_BYTES) {
-      return c.json({ error: PAYLOAD_TOO_LARGE_ERROR }, 413)
     }
 
     let payload: TelemetryBatch
     try {
-      payload = parseTelemetryBatch(JSON.parse(body))
+      payload = validateTelemetryBatch(JSON.parse(body))
     } catch {
       return c.json({ error: INVALID_TELEMETRY_ERROR }, 400)
     }

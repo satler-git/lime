@@ -114,10 +114,14 @@ export const validateTelemetryBatch = (value: unknown): TelemetryBatch => {
   hasOnlyKeys(input, ['events'])
   const events: unknown[] = Array.isArray(input.events) ? input.events : invalid()
   if (events.length > MAX_TELEMETRY_ITEMS_PER_BATCH) invalid()
-  return { events: events.map(parseEvent) }
+  const parsedEvents = events.map(parseEvent)
+  const clientEventIds = new Set<string>()
+  for (const event of parsedEvents) {
+    if (clientEventIds.has(event.clientEventId)) invalid()
+    clientEventIds.add(event.clientEventId)
+  }
+  return { events: parsedEvents }
 }
-
-export const parseTelemetryBatch = validateTelemetryBatch
 
 /**
  * Derive only mechanical reading measurements from raw events. This function does

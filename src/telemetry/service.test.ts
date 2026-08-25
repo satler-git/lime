@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   deriveReadingStats,
   MAX_EVENT_PAYLOAD_BYTES,
-  parseTelemetryBatch,
+  validateTelemetryBatch,
   type TelemetryEvent,
 } from './index'
 
@@ -19,17 +19,23 @@ describe('telemetry validation and statistics', () => {
     const input = {
       events: [event({ type: 'cycle_start', payload: { articleWordCount: 300 } })],
     }
-    const result = parseTelemetryBatch(input)
+    const result = validateTelemetryBatch(input)
     expect(result).toEqual(input)
     expect(result.events).not.toBe(input.events)
   })
 
   it('rejects unknown payload fields, secrets, non-JSON-safe values, and oversized payloads', () => {
-    expect(() => parseTelemetryBatch({ events: [event({ type: 'cycle_end', payload: { apiKey: 'secret' } as never })] })).toThrow('Invalid telemetry payload')
-    expect(() => parseTelemetryBatch({ events: [event({ type: 'word_lookup', payload: { source: 'article', word: 'private text' } as never })] })).toThrow('Invalid telemetry payload')
-    expect(() => parseTelemetryBatch({ events: [event({ type: 'quiz_answer', payload: { questionId: 'q', optionId: 'x', correct: true } as never })] })).toThrow('Invalid telemetry payload')
-    expect(() => parseTelemetryBatch({ events: [event({ type: 'scroll_pos', payload: { position: Number.NaN } })] })).toThrow('Invalid telemetry payload')
-    expect(() => parseTelemetryBatch({ events: [event({ type: 'quiz_answer', payload: { questionId: 'q'.repeat(MAX_EVENT_PAYLOAD_BYTES), optionId: 'o' } as never })] })).toThrow('Invalid telemetry payload')
+    expect(() => validateTelemetryBatch({ events: [event({ type: 'cycle_end', payload: { apiKey: 'secret' } as never })] })).toThrow('Invalid telemetry payload')
+    expect(() => validateTelemetryBatch({ events: [event({ type: 'word_lookup', payload: { source: 'article', word: 'private text' } as never })] })).toThrow('Invalid telemetry payload')
+    expect(() => validateTelemetryBatch({ events: [event({ type: 'quiz_answer', payload: { questionId: 'q', optionId: 'x', correct: true } as never })] })).toThrow('Invalid telemetry payload')
+    expect(() => validateTelemetryBatch({ events: [event({ type: 'scroll_pos', payload: { position: Number.NaN } })] })).toThrow('Invalid telemetry payload')
+    expect(() => validateTelemetryBatch({ events: [event({ type: 'quiz_answer', payload: { questionId: 'q'.repeat(MAX_EVENT_PAYLOAD_BYTES), optionId: 'o' } as never })] })).toThrow('Invalid telemetry payload')
+  })
+
+  it('rejects duplicate client event IDs within a batch', () => {
+    const duplicate = event({ type: 'cycle_end', payload: {} })
+    expect(() => validateTelemetryBatch({ events: [duplicate, { ...duplicate, type: 'scroll_backward', payload: {} }] }))
+      .toThrow('Invalid telemetry payload')
   })
 
   it('derives mechanical reading measurements without learning outcomes', () => {
