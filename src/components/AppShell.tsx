@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { LimeRoute } from '../routes'
 
 type AppShellProps = {
-  onNavigate: (route: LimeRoute) => void
+  onNavigate: (route: LimeRoute, options?: { replace?: boolean }) => void
   children: ReactNode
 }
 
@@ -17,7 +17,7 @@ export function AppShell({ onNavigate, children }: AppShellProps) {
           className="inline-flex h-11 items-center justify-center rounded-lg bg-transparent px-2 text-sm font-semibold tracking-[.12em] text-accent transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96]"
           type="button"
           aria-label="ホームに戻る"
-          onClick={() => onNavigate('today')}
+          onClick={() => onNavigate('today', { replace: true })}
         >
           lime
         </button>

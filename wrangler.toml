@@ -1,6 +1,6 @@
 name = "lime-auth"
 main = "src/worker/index.ts"
-compatibility_date = "2026-08-25"
+compatibility_date = "2026-08-22"
 
 [vars]
 APP_URL = "https://example.test"

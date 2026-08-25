@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { StaticRouter } from 'react-router-dom'
 import App from './App'
-import { AuthProvider } from './auth'
+import { MockAuthProvider } from './auth'
 import { isLimeRoute, limeRouteToPath, LIME_ROUTES, pathToLimeRoute } from './routes'
 
 const renderApp = (path: string = '/') => renderToStaticMarkup(
-  <AuthProvider>
-    <StaticRouter location={path}>
+  <StaticRouter location={path}>
+    <MockAuthProvider>
       <App />
-    </StaticRouter>
-  </AuthProvider>,
+    </MockAuthProvider>
+  </StaticRouter>,
 )
 
 describe('App routing', () => {
@@ -74,9 +74,15 @@ describe('routes', () => {
     }
   })
 
+  it('resolves the root and trailing-slash paths to today', () => {
+    expect(pathToLimeRoute('/')).toBe('today')
+    expect(pathToLimeRoute('/today/')).toBe('today')
+    expect(pathToLimeRoute('/today')).toBe('today')
+  })
+
   it('returns undefined for unknown paths', () => {
     expect(pathToLimeRoute('/unknown')).toBeUndefined()
-    expect(pathToLimeRoute('/')).toBeUndefined()
     expect(pathToLimeRoute('')).toBeUndefined()
+    expect(pathToLimeRoute('/foo/bar')).toBeUndefined()
   })
 })

@@ -2,6 +2,7 @@
   "name": "lime",
   "short_name": "lime",
   "start_url": "/today",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#151714",
   "theme_color": "#151714",

@@ -69,11 +69,11 @@ function saveStoredProgress(progress: StoredProgress): void {
   }
 }
 
-function useLimeNavigate(): (route: LimeRoute) => void {
+function useLimeNavigate(): (route: LimeRoute, options?: { replace?: boolean }) => void {
   const navigate = useNavigate()
-  return useCallback((route: LimeRoute) => {
+  return useCallback((route: LimeRoute, options: { replace?: boolean } = {}) => {
     if (isLimeRoute(route)) {
-      navigate(limeRouteToPath(route))
+      navigate(limeRouteToPath(route), { replace: options.replace })
     }
   }, [navigate])
 }
@@ -81,7 +81,9 @@ function useLimeNavigate(): (route: LimeRoute) => void {
 function useNavigateBack(fallback = '/today'): () => void {
   const navigate = useNavigate()
   return useCallback(() => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
+    const state = typeof window !== 'undefined' ? window.history.state : undefined
+    const idx = typeof state === 'object' && state !== null ? (state as { idx?: number }).idx : undefined
+    if (typeof idx === 'number' && idx > 0) {
       navigate(-1)
     } else {
       navigate(fallback)

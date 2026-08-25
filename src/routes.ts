@@ -18,7 +18,9 @@ export function limeRouteToPath(route: LimeRoute): `/${string}` {
 }
 
 export function pathToLimeRoute(path: string): LimeRoute | undefined {
+  if (path === '') return undefined
   const normalized = path.replace(/\/+$/, '') || '/'
+  if (normalized === '/') return 'today'
   for (const route of LIME_ROUTES) {
     if (LIME_ROUTE_PATHS[route] === normalized) {
       return route
