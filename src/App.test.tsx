@@ -10,12 +10,11 @@ describe('App routing', () => {
     expect(html).toContain('読解を始める')
   })
 
-  it('renders the AppShell with header and bottom tab navigation', () => {
+  it('renders the AppShell with a home button', () => {
     const html = renderToStaticMarkup(<App />)
     expect(html).toContain('lime')
-    expect(html).toContain('今日')
-    expect(html).toContain('設定')
-    expect(html).toContain('aria-label="タブナビゲーション"')
+    expect(html).toContain('aria-label="ホームに戻る"')
+    expect(html).not.toContain('aria-label="タブナビゲーション"')
   })
 
   it.each(['today' as const, 'reading' as const, 'settings' as const])('renders the %s route', (route) => {
@@ -26,11 +25,11 @@ describe('App routing', () => {
     } else if (route === 'reading') {
       expect(html).toContain('読解')
       expect(html).toContain('ReadingFlow')
-      expect(html).toContain('aria-label="今日の学習に戻る"')
+      expect(html).toContain('aria-label="ホームに戻る"')
     } else {
       expect(html).toContain('設定')
       expect(html).toContain('UI Unit 3')
-      expect(html).toContain('aria-label="今日の学習に戻る"')
+      expect(html).toContain('aria-label="ホームに戻る"')
     }
   })
 
