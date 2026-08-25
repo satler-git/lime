@@ -61,6 +61,10 @@ class FaultInjectingSessionRepository implements ReadingSessionRepository {
   load(id: string): Promise<ReadingSession | null> {
     return this.delegate.load(id)
   }
+
+  loadAll(): Promise<ReadingSession[]> {
+    return this.delegate.loadAll()
+  }
 }
 
 class FaultInjectingQuizStateRepository implements QuizStateRepository {

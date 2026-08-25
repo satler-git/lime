@@ -13,11 +13,13 @@ export type DictionaryImportApplication = {
   listSources: () => Promise<DictionarySource[]>
 }
 
-export function createDictionaryImportService(): DictionaryImportApplication | undefined {
+export function createDictionaryImportService(userId?: string): DictionaryImportApplication | undefined {
   if (typeof globalThis.indexedDB === 'undefined') {
     return undefined
   }
-  const repository = new IndexedDbDictionaryRepository()
+  // Empty strings are rejected by the namespacing helper, so only pass a real user ID.
+  const repositoryOptions = userId !== undefined && userId.length > 0 ? { userId } : undefined
+  const repository = new IndexedDbDictionaryRepository(repositoryOptions)
   const service = new DictionaryService(repository, [
     { source: EijiroSource, parser: eijiroParser },
     { source: WiktionarySource, parser: wiktionaryJsonlParser },

@@ -15,48 +15,20 @@ import type { Card } from './domain/card'
 import { createTodayPlan, type TodayPlan } from './planning/today-plan'
 import { isLimeRoute, type LimeRoute } from './routes'
 import { loadSettings, saveSettings, type LlmConfig } from './settings-storage'
+import { useAuth } from './auth'
+import { useCardService } from './use-card-service'
+import { useLimits } from './use-limits'
+import { useSync } from './use-sync'
+import { useTelemetryQueue } from './use-telemetry-queue'
 
-type AppProps = {
+export type AppProps = {
   initialRoute?: LimeRoute
 }
 
-const DEFAULT_REVIEW_LIMIT = 50
-const DEFAULT_NEW_LIMIT = 20
 const DEFAULT_LLM_CONFIG: LlmConfig = { endpoint: '', model: '', apiKey: '' }
-
-const DEMO_REVIEW_POOL_SIZE = 72
-const DEMO_NEW_POOL_SIZE = 28
-const DEMO_BASE_TIME = new Date('2025-01-01T00:00:00.000Z')
-
-function generateDemoCards(count: number, state: Card['state'], idPrefix: string): Card[] {
-  const oneDay = 24 * 60 * 60 * 1000
-
-  return Array.from({ length: count }, (_, index) => {
-    const due = state === 'new'
-      ? new Date(DEMO_BASE_TIME)
-      : new Date(DEMO_BASE_TIME.getTime() + index * oneDay)
-
-    return {
-      id: `${idPrefix}${index}`,
-      word: `${state}-${index}`,
-      createdAt: new Date(DEMO_BASE_TIME),
-      due,
-      stability: 0,
-      difficulty: 0,
-      elapsedDays: 0,
-      scheduledDays: 0,
-      learningSteps: 0,
-      reps: state === 'new' ? 0 : 1,
-      lapses: 0,
-      state,
-    }
-  })
-}
 
 export default function App({ initialRoute = 'today' }: AppProps) {
   const [route, setRoute] = useState<LimeRoute>(() => (isLimeRoute(initialRoute) ? initialRoute : 'today'))
-  const [reviewLimit, setReviewLimit] = useState(DEFAULT_REVIEW_LIMIT)
-  const [newLimit, setNewLimit] = useState(DEFAULT_NEW_LIMIT)
   const [llmConfig, setLlmConfig] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
   const navigate = useCallback((next: LimeRoute) => {
     if (isLimeRoute(next)) {
@@ -64,19 +36,20 @@ export default function App({ initialRoute = 'today' }: AppProps) {
     }
   }, [])
 
-  const importApplication = useMemo(() => createDictionaryImportService(), [])
+  const { user, isLoading: isAuthLoading } = useAuth()
+  const { reviewLimit, newLimit, setReviewLimit, setNewLimit } = useLimits(user, isAuthLoading)
+  const userId = user?.id
+  const { cardService, repository: cardRepository, isLoading: isCardLoading } = useCardService(userId)
+  useSync({ userId, cardRepository })
+  const telemetry = useTelemetryQueue(userId)
+  const importApplication = useMemo(() => createDictionaryImportService(userId), [userId])
+
+  const [dueCards, setDueCards] = useState<Card[]>([])
+  const [newCards, setNewCards] = useState<Card[]>([])
 
   useEffect(() => {
     const loaded = loadSettings()
-    if (loaded === undefined) return
-
-    if (loaded.reviewLimit !== undefined) {
-      setReviewLimit(loaded.reviewLimit)
-    }
-    if (loaded.newLimit !== undefined) {
-      setNewLimit(loaded.newLimit)
-    }
-    if (loaded.llmConfig !== undefined) {
+    if (loaded?.llmConfig !== undefined) {
       setLlmConfig(loaded.llmConfig)
     }
   }, [])
@@ -84,6 +57,38 @@ export default function App({ initialRoute = 'today' }: AppProps) {
   useEffect(() => {
     saveSettings({ reviewLimit, newLimit, llmConfig })
   }, [reviewLimit, newLimit, llmConfig])
+
+  useEffect(() => {
+    setDueCards([])
+    setNewCards([])
+
+    if (cardService === undefined || cardRepository === undefined) {
+      return
+    }
+
+    let cancelled = false
+    const loadCards = async (): Promise<void> => {
+      try {
+        const now = new Date()
+        const all = await cardRepository.loadAll()
+        if (cancelled) return
+        setDueCards(
+          all
+            .filter((card) => card.due.getTime() <= now.getTime())
+            .sort((a, b) => a.due.getTime() - b.due.getTime()),
+        )
+        setNewCards(all.filter((card) => card.state === 'new'))
+      } catch {
+        if (!cancelled) {
+          setDueCards([])
+          setNewCards([])
+        }
+      }
+    }
+
+    void loadCards()
+    return () => { cancelled = true }
+  }, [cardService, cardRepository])
 
   const client = useMemo<TextGenerationClient | undefined>(() => {
     if (
@@ -110,15 +115,13 @@ export default function App({ initialRoute = 'today' }: AppProps) {
     return createCycleContentProvider(client, specFactory)
   }, [client])
 
-  const todayPlan = useMemo<TodayPlan>(() => {
-    const dueCards = generateDemoCards(DEMO_REVIEW_POOL_SIZE, 'review', 'review-')
-    const newCards = generateDemoCards(DEMO_NEW_POOL_SIZE, 'new', 'new-')
-
-    return createTodayPlan({ dueCards, newCards, newLimit, reviewLimit })
-  }, [newLimit, reviewLimit])
+  const todayPlan = useMemo<TodayPlan>(() => (
+    createTodayPlan({ dueCards, newCards, newLimit, reviewLimit })
+  ), [dueCards, newCards, newLimit, reviewLimit])
 
   const reviewCount = todayPlan.selectedCards.filter((card) => card.state !== 'new').length
   const newCount = todayPlan.selectedCards.filter((card) => card.state === 'new').length
+  const isStartButtonDisabled = isCardLoading || todayPlan.selectedCards.length === 0 || contentProvider === undefined
 
   return (
     <AppShell route={route} onNavigate={navigate}>
@@ -136,13 +139,17 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           onNewLimitChange={setNewLimit}
           onStartReading={() => navigate('reading')}
           onOpenSettings={() => navigate('settings')}
+          isStartButtonDisabled={isStartButtonDisabled}
         />
       )}
       {route === 'reading' && (
         <ReadingScreen
-          client={client}
-          contentProvider={contentProvider}
           todayPlan={todayPlan}
+          contentProvider={contentProvider}
+          cardService={cardService}
+          cardRepository={cardRepository}
+          userId={userId}
+          telemetry={telemetry}
         />
       )}
       {route === 'settings' && (

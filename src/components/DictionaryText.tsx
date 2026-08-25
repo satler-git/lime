@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { normalizeWord } from '../domain/word'
 import { DictionaryWord } from './DictionaryWord'
 import type { WordAnchor, WordKind } from './types'
 
@@ -13,20 +14,16 @@ type DictionaryTextProps = {
 
 const wordPattern = /[A-Za-z]+(?:['’-][A-Za-z]+)*/g
 
-function normalize(word: string) {
-  return word.toLocaleLowerCase().replaceAll('’', "'")
-}
-
 export function DictionaryText({ text, entry, targetWords = {}, onOpen, onOpenAt }: DictionaryTextProps) {
   const parts: ReactNode[] = []
   let cursor = 0
-  const normalizedEntry = entry ? normalize(entry) : undefined
+  const normalizedEntry = entry ? normalizeWord(entry) : undefined
 
   for (const match of text.matchAll(wordPattern)) {
     const index = match.index ?? 0
     const token = match[0]
     if (index > cursor) parts.push(text.slice(cursor, index))
-    const normalizedToken = normalize(token)
+    const normalizedToken = normalizeWord(token)
     parts.push(
       <DictionaryWord
         key={`${index}-${token}`}

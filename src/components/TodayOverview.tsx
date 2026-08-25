@@ -20,6 +20,7 @@ type TodayOverviewProps = {
   reviewLimit?: number
   newLimit?: number
   recentSessions?: RecentSession[]
+  isStartButtonDisabled?: boolean
   onStartReading?: () => void
   onOpenSettings?: () => void
   onReviewLimitChange?: (limit: number) => void
@@ -40,6 +41,7 @@ export function TodayOverview({
   reviewLimit,
   newLimit,
   recentSessions = defaultRecentSessions,
+  isStartButtonDisabled = false,
   onStartReading,
   onOpenSettings,
   onReviewLimitChange,
@@ -64,7 +66,7 @@ export function TodayOverview({
           onReviewLimitChange={onReviewLimitChange}
           onNewLimitChange={onNewLimitChange}
         />
-        <StartReadingButton onClick={onStartReading} />
+        <StartReadingButton onClick={onStartReading} disabled={isStartButtonDisabled} />
         <section aria-labelledby="recent-sessions-title">
           <div className="flex items-center justify-between"><h2 id="recent-sessions-title" className="m-0 text-xs font-semibold tracking-[.08em] text-text-muted">最近の学習</h2><span className="text-xs text-text-faint">今日</span></div>
           <div className="mt-3 divide-y divide-line border-y border-line">

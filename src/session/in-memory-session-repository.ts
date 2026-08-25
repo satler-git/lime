@@ -18,6 +18,10 @@ export class InMemoryReadingSessionRepository implements ReadingSessionRepositor
     return session === undefined ? null : cloneReadingSession(session)
   }
 
+  async loadAll(): Promise<ReadingSession[]> {
+    return [...this.sessions.values()].map(cloneReadingSession)
+  }
+
   async delete(id: string): Promise<void> {
     this.sessions.delete(id)
   }

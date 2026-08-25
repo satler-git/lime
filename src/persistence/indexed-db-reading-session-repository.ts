@@ -83,6 +83,15 @@ export class IndexedDbReadingSessionRepository implements ReadingSessionReposito
     return record === undefined ? null : deserializeReadingSession(record)
   }
 
+  async loadAll(): Promise<ReadingSession[]> {
+    const database = await this.open()
+    const request = database.transaction(this.storeName, 'readonly')
+      .objectStore(this.storeName)
+      .getAll()
+    const records = await requestResult<PersistedReadingSession[]>(request)
+    return records.map(deserializeReadingSession)
+  }
+
   async close(): Promise<void> {
     const cachedDatabase = this.database
     const database = await cachedDatabase?.catch(() => undefined)

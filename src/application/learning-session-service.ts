@@ -180,11 +180,26 @@ export class LearningSessionService {
   }
 
   /** Start one of the contiguous cycles produced by TodayPlan. */
-  async startPlannedCycle(plan: TodayPlan, cycleIndex = 0): Promise<ReadingSession> {
-    if (!Number.isInteger(cycleIndex) || cycleIndex < 0 || cycleIndex >= plan.cycles.length) {
-      throw new SessionOrchestrationError(`No planned cycle exists at index ${cycleIndex}`)
+  async startPlannedCycle(cycleIndex?: number): Promise<ReadingSession>
+  async startPlannedCycle(plan: TodayPlan, cycleIndex?: number): Promise<ReadingSession>
+  async startPlannedCycle(cycleIndexOrPlan: number | TodayPlan = 0, cycleIndex = 0): Promise<ReadingSession> {
+    if (typeof cycleIndexOrPlan === 'number') {
+      if (this.plannedCycle === undefined) {
+        throw new SessionOrchestrationError('A TodayPlan is required when starting by cycle index')
+      }
+      const index = cycleIndexOrPlan
+      if (!Number.isInteger(index) || index < 0 || index >= this.plannedCycle.cycles.length) {
+        throw new SessionOrchestrationError(`No planned cycle exists at index ${index}`)
+      }
+      return this.startCycle(this.plannedCycle.cycles[index])
     }
-    return this.startCycle(plan.cycles[cycleIndex])
+
+    const plan = cycleIndexOrPlan
+    const index = cycleIndex
+    if (!Number.isInteger(index) || index < 0 || index >= plan.cycles.length) {
+      throw new SessionOrchestrationError(`No planned cycle exists at index ${index}`)
+    }
+    return this.startCycle(plan.cycles[index])
   }
 
   async loadSession(sessionId: string): Promise<ReadingSession> {

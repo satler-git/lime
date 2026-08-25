@@ -118,6 +118,10 @@ const endpointFor = (
     throw new TypeError('A valid auth base URL is required')
   }
 
+  if (resolvedBase.search || resolvedBase.hash) {
+    throw new TypeError('Auth base URLs must not contain a query or fragment')
+  }
+
   if (hasUserinfoSyntax(value) || resolvedBase.username.length > 0 || resolvedBase.password.length > 0) {
     throw new TypeError('Auth base URLs must not contain credentials')
   }
@@ -128,7 +132,8 @@ const endpointFor = (
     throw new TypeError('Auth base URL must be same-origin')
   }
 
-  return new URL(path, resolvedBase).toString()
+  const normalizedBase = `${resolvedBase.href.replace(/\/+$/, '')}/`
+  return new URL(path.slice(1), normalizedBase).toString()
 }
 
 const hasJsonContentType = (response: Response): boolean => {
@@ -151,7 +156,12 @@ const parseUser = (value: unknown, status: number): AuthUser => {
     throw new AuthInvalidResponseError(status)
   }
 
-  return { id, email, name, picture }
+  return {
+    id,
+    email,
+    name: typeof name === 'string' ? name.trim() || null : null,
+    picture: typeof picture === 'string' ? picture.trim() || null : null,
+  }
 }
 
 const parseLogoutResponse = (value: unknown, status: number): void => {
@@ -238,7 +248,7 @@ const readBoundedResponseBody = async (response: Response, signal?: AbortSignal)
 }
 
 /** Browser/client adapter for the existing Google OAuth Worker routes. */
-export class AuthClient implements AuthClient {
+export class AuthClient {
   private readonly loginEndpoint: string
   private readonly meEndpoint: string
   private readonly logoutEndpoint: string

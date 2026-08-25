@@ -1,5 +1,6 @@
 import { User, Sparkles, SlidersHorizontal, BookOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useAuth } from '../auth'
 import type { DictionaryImportApplication } from '../import-service'
 import type { LlmConfig } from '../settings-storage'
 import { ImportSection } from './ImportSection'
@@ -102,6 +103,80 @@ function TextInput({
   )
 }
 
+const isSafePictureUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function AccountSection() {
+  const { user, isLoading, error, login, logout } = useAuth()
+  const [pictureError, setPictureError] = useState(false)
+
+  useEffect(() => {
+    setPictureError(false)
+  }, [user?.id])
+
+  if (isLoading) {
+    return <p className="m-0 text-sm text-text-faint">アカウント情報を読み込み中…</p>
+  }
+
+  if (user !== null) {
+    const pictureUrl = user.picture && isSafePictureUrl(user.picture) ? user.picture : null
+    const showPicture = pictureUrl !== null && !pictureError
+
+    return (
+      <div className="grid gap-2">
+        <div className="flex items-center gap-3">
+          {showPicture ? (
+            <img
+              src={pictureUrl}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="h-10 w-10 rounded-full object-cover"
+              onError={() => setPictureError(true)}
+            />
+          ) : (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-raised">
+              <User size={20} strokeWidth={1.8} className="text-text-faint" aria-hidden="true" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="m-0 truncate text-sm font-medium text-text">{user.name || user.email}</p>
+            {user.name && <p className="m-0 truncate text-xs text-text-faint">{user.email}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={() => { void logout() }}
+            disabled={isLoading}
+            className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[7px] border-0 bg-again px-4 text-xs font-semibold text-background transition-[background-color,transform] duration-120 hover:opacity-90 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Logout
+          </button>
+        </div>
+        {error && <p className="m-0 text-xs text-again" role="alert">{error.message}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-3">
+      <button
+        type="button"
+        onClick={() => { void login() }}
+        disabled={isLoading}
+        className="inline-flex h-10 w-fit cursor-pointer items-center gap-2 rounded-[7px] border-0 bg-accent px-4 text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        Login with Google
+      </button>
+      {error && <p className="m-0 text-xs text-again" role="alert">{error.message}</p>}
+    </div>
+  )
+}
+
 export function SettingsScreen({
   reviewLimit = 50,
   newLimit = 20,
@@ -183,7 +258,7 @@ export function SettingsScreen({
         </SettingGroup>
 
         <SettingGroup id="account-section" icon={User} title="Account">
-          <p className="m-0 text-xs text-text-faint">アカウント設定は UI Unit 3.5 以降で実装予定です。</p>
+          <AccountSection />
         </SettingGroup>
       </div>
     </main>

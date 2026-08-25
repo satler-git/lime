@@ -83,6 +83,15 @@ export class IndexedDbReviewActionRepository implements ReviewActionRepository {
     return record === undefined ? null : deserializeReviewAction(record)
   }
 
+  async loadAll(): Promise<ReviewAction[]> {
+    const database = await this.open()
+    const request = database.transaction(this.storeName, 'readonly')
+      .objectStore(this.storeName)
+      .getAll()
+    const records = await requestResult<PersistedReviewAction[]>(request)
+    return records.map(deserializeReviewAction)
+  }
+
   async findLatestNonUndone(sessionId: string, cardId: CardId): Promise<ReviewAction | null> {
     const database = await this.open()
     const request = database.transaction(this.storeName, 'readonly')

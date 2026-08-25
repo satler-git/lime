@@ -9,6 +9,7 @@ import type { BatchSelectionState } from '../batch-add/types'
 import type { RecordLookupInput } from '../session/session-service'
 import type { ReadingSession } from '../session/types'
 import type { QuizQuestion, QuizState } from '../quiz/types'
+import type { TelemetryTransport, TelemetryEventInput } from '../telemetry/client'
 import { BatchAddPanel } from './BatchAddPanel'
 import { DictionaryPopover } from './DictionaryPopover'
 import { DictionaryText } from './DictionaryText'
@@ -42,7 +43,7 @@ export type ReadingFlowProps = {
   totalCycles?: number
   targetWords?: Record<string, WordKind>
   /** Converts a provider-neutral dictionary result into the existing popover shape. */
-  dictionaryAdapter?: (result: unknown, requestedWord: string) => TargetWordData
+  dictionaryAdapter?: (result: unknown, requestedWord: string) => TargetWordData | undefined
   /** Returns whether a looked-up word already has an SRS card. */
   isWordInSrs?: (word: string) => boolean
   /** Returns the card represented by a looked-up word, when it is reviewable. */
@@ -50,6 +51,7 @@ export type ReadingFlowProps = {
   initialQuiz?: QuizState
   initialBatchSelection?: BatchSelectionState
   completionScore?: number
+  telemetry?: TelemetryTransport
 }
 
 type OpenWord = {
@@ -143,6 +145,7 @@ export function ReadingFlow({
   initialQuiz,
   initialBatchSelection,
   completionScore,
+  telemetry,
 }: ReadingFlowProps) {
   const [session, setSession] = useState(initialSession)
   const [phase, setPhase] = useState<ReadingFlowPhase>(() => phaseForSessionStatus(initialSession.status))
@@ -163,6 +166,8 @@ export function ReadingFlow({
   const [reviewActions, setReviewActions] = useState<Record<string, string>>({})
   const [pendingReviews, setPendingReviews] = useState<Record<string, ReviewPendingAction>>({})
   const pendingReviewsRef = useRef<Record<string, ReviewPendingAction>>({})
+  const hasEmittedCycleStart = useRef(false)
+  const telemetryRef = useRef<TelemetryTransport | undefined>(undefined)
   const [batchSelection, setBatchSelection] = useState<BatchSelectionState | undefined>(initialBatchSelection)
   const [batchLoading, setBatchLoading] = useState(() => initialBatchSelection === undefined && phaseForSessionStatus(initialSession.status) === 'complete')
   const [batchLoadAttempt, setBatchLoadAttempt] = useState(0)
@@ -171,6 +176,31 @@ export function ReadingFlow({
 
   const paragraphs = useMemo(() => getArticleParagraphs(content.article), [content.article])
   const articleWordCount = useMemo(() => content.article.trim().split(/\s+/).filter(Boolean).length, [content.article])
+
+  useEffect(() => {
+    telemetryRef.current = telemetry
+  }, [telemetry])
+
+  useEffect(() => {
+    hasEmittedCycleStart.current = false
+  }, [session.id])
+
+  useEffect(() => {
+    if (!hasEmittedCycleStart.current && telemetry !== undefined && articleWordCount >= 1) {
+      try {
+        telemetry.enqueue({
+          sessionId: session.id,
+          cycleId: session.id,
+          occurredAt: new Date().toISOString(),
+          type: 'cycle_start',
+          payload: { articleWordCount },
+        })
+        hasEmittedCycleStart.current = true
+      } catch {
+        // enqueue may throw for invalid events; ignore
+      }
+    }
+  }, [articleWordCount, session.id, telemetry])
 
   useEffect(() => {
     if (phase !== 'quiz' || quiz !== undefined) return
@@ -244,6 +274,17 @@ export function ReadingFlow({
         inSrs,
       })
       if (lookupRequestId.current !== requestId || phaseChangeId.current !== startGeneration) return
+      try {
+        telemetryRef.current?.enqueue({
+          sessionId: session.id,
+          cycleId: session.id,
+          occurredAt: new Date().toISOString(),
+          type: 'word_lookup',
+          payload: { source },
+        })
+      } catch {
+        // Telemetry failures should not break the dictionary lookup flow.
+      }
       const entry = lookupResultToWord(snapshot.result, word, dictionaryAdapter)
       entry.inSrs = inSrs
       const cardId = inSrs ? cardIdForWord?.(entry.word) : undefined
@@ -307,6 +348,17 @@ export function ReadingFlow({
       const result = await application.reviewCard(session.id, cardId, rating)
       setRatings((current) => ({ ...current, [cardId]: result.action.rating }))
       setReviewActions((current) => ({ ...current, [cardId]: result.action.id }))
+      try {
+        telemetryRef.current?.enqueue({
+          sessionId: session.id,
+          cycleId: session.id,
+          occurredAt: new Date().toISOString(),
+          type: 'rating',
+          payload: { rating: result.action.rating },
+        })
+      } catch {
+        // Telemetry failures should not break the review flow.
+      }
     } catch (error: unknown) {
       setFlowError(error instanceof Error ? error.message : '評価を保存できませんでした')
       throw error
@@ -383,6 +435,17 @@ export function ReadingFlow({
       const completed = await application.completeSession(session.id)
       setSession(completed)
       setPhase('complete')
+      try {
+        telemetryRef.current?.enqueue({
+          sessionId: session.id,
+          cycleId: session.id,
+          occurredAt: new Date().toISOString(),
+          type: 'cycle_end',
+          payload: {},
+        })
+      } catch {
+        // Telemetry failures should not break the completion flow.
+      }
     } catch (error: unknown) {
       setCompletionFailed(true)
       setFlowError(error instanceof Error ? error.message : '読了を完了できませんでした')
@@ -401,6 +464,17 @@ export function ReadingFlow({
       const snapshot = await application.answerQuestion(session.id, question.id, selectedAnswer)
       setSession(snapshot.session)
       setQuiz(snapshot.quiz)
+      try {
+        telemetryRef.current?.enqueue({
+          sessionId: session.id,
+          cycleId: session.id,
+          occurredAt: new Date().toISOString(),
+          type: 'quiz_answer',
+          payload: { questionId: question.id, optionId: selectedAnswer },
+        })
+      } catch {
+        // Telemetry failures should not break the quiz flow.
+      }
       setSelectedAnswer(undefined)
       if (snapshot.quiz.completed) await finishQuiz()
     } catch (error: unknown) {

@@ -1,24 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import App from './App'
+import { AuthProvider } from './auth'
 import { isLimeRoute, LIME_ROUTES } from './routes'
 
 describe('App routing', () => {
   it('starts on the today overview', () => {
-    const html = renderToStaticMarkup(<App />)
+    const html = renderToStaticMarkup(<AuthProvider><App /></AuthProvider>)
     expect(html).toContain('今日の学習')
     expect(html).toContain('読解を始める')
   })
 
   it('renders the AppShell with a home button', () => {
-    const html = renderToStaticMarkup(<App />)
+    const html = renderToStaticMarkup(<AuthProvider><App /></AuthProvider>)
     expect(html).toContain('lime')
     expect(html).toContain('aria-label="ホームに戻る"')
     expect(html).not.toContain('aria-label="タブナビゲーション"')
   })
 
   it.each(['today' as const, 'reading' as const, 'settings' as const])('renders the %s route', (route) => {
-    const html = renderToStaticMarkup(<App initialRoute={route} />)
+    const html = renderToStaticMarkup(<AuthProvider><App initialRoute={route} /></AuthProvider>)
     if (route === 'today') {
       expect(html).toContain('今日の学習')
       expect(html).toContain('読解を始める')
@@ -34,7 +35,7 @@ describe('App routing', () => {
   })
 
   it('falls back to today for an unknown initial route', () => {
-    const html = renderToStaticMarkup(<App initialRoute={'invalid' as unknown as 'today'} />)
+    const html = renderToStaticMarkup(<AuthProvider><App initialRoute={'invalid' as unknown as 'today'} /></AuthProvider>)
     expect(html).toContain('今日の学習')
     expect(html).toContain('lime')
   })

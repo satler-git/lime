@@ -40,6 +40,7 @@ export interface CardReviewService {
 export interface ReviewActionRepository {
   save(action: ReviewAction): Promise<void>
   load(id: string): Promise<ReviewAction | null>
+  loadAll(): Promise<ReviewAction[]>
   findLatestNonUndone(sessionId: string, cardId: CardId): Promise<ReviewAction | null>
 }
 

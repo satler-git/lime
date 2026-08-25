@@ -58,6 +58,23 @@ describe('AuthClient', () => {
     })
   })
 
+  it('resolves login and API routes under an absolute base URL path', () => {
+    const fetcher = vi.fn<AuthFetch>().mockResolvedValue(new Response(null, { status: 204 }))
+    const redirect = vi.fn()
+    const client = new AuthClient({
+      baseUrl: 'https://app.example.test/api',
+      origin: 'https://app.example.test',
+      fetch: fetcher,
+      redirect,
+    })
+
+    client.login()
+    expect(redirect).toHaveBeenCalledWith('https://app.example.test/api/auth/google')
+    return client.logout().then(() => {
+      expect(fetcher).toHaveBeenCalledWith('https://app.example.test/api/auth/logout', expect.anything())
+    })
+  })
+
   it('rejects cross-origin and protocol-relative base URLs before any operation', () => {
     const fetcher = vi.fn<AuthFetch>()
     const options = { fetch: fetcher, origin: 'https://app.example.test', redirect: vi.fn() }
@@ -74,6 +91,8 @@ describe('AuthClient', () => {
       '/deployment#fragment',
       '/deployment path',
       '/deployment\tpath',
+      'https://app.example.test?query',
+      'https://app.example.test#fragment',
       'https://app.example.test\u0000/deployment',
     ]) {
       expect(() => new AuthClient({ ...options, baseUrl })).toThrow(/(?:query|fragment|whitespace|control)/i)
@@ -123,6 +142,44 @@ describe('AuthClient', () => {
       method: 'GET',
       credentials: 'same-origin',
       cache: 'no-store',
+    })
+  })
+
+  it('treats empty name and picture as null', async () => {
+    const fetcher = vi.fn<AuthFetch>().mockResolvedValue(jsonResponse({
+      user: {
+        id: 'user-1',
+        email: 'reader@example.test',
+        name: '',
+        picture: '',
+      },
+    }))
+    const client = new AuthClient({ fetch: fetcher })
+
+    await expect(client.getCurrentUser()).resolves.toEqual({
+      id: 'user-1',
+      email: 'reader@example.test',
+      name: null,
+      picture: null,
+    })
+  })
+
+  it('trims and coalesces whitespace-only name and picture to null', async () => {
+    const fetcher = vi.fn<AuthFetch>().mockResolvedValue(jsonResponse({
+      user: {
+        id: 'user-1',
+        email: 'reader@example.test',
+        name: '   ',
+        picture: '\t\n',
+      },
+    }))
+    const client = new AuthClient({ fetch: fetcher })
+
+    await expect(client.getCurrentUser()).resolves.toEqual({
+      id: 'user-1',
+      email: 'reader@example.test',
+      name: null,
+      picture: null,
     })
   })
 
@@ -187,7 +244,6 @@ describe('AuthClient', () => {
     const oversized = responseFor(200, 'application/json', String(MAX_AUTH_RESPONSE_BODY_BYTES + 1))
     await expect(new AuthClient({ fetch: vi.fn<AuthFetch>().mockResolvedValue(oversized.response) }).getCurrentUser()).rejects.toBeInstanceOf(AuthInvalidResponseError)
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(unauthorized.cancel).toHaveBeenCalled()
     expect(tooLargeStatus.cancel).toHaveBeenCalled()
     expect(wrongType.cancel).toHaveBeenCalled()

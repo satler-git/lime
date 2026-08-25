@@ -5,5 +5,5 @@ compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "lime-auth"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "889ba714-09f7-4402-9480-d387bc42bf19"
 migrations_dir = "migrations"
