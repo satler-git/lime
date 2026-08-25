@@ -166,6 +166,7 @@ export default function App({ initialRoute = 'today' }: AppProps) {
           llmConfig={llmConfig}
           onLlmConfigChange={setLlmConfig}
           importApplication={importApplication}
+          onBack={() => navigate('today')}
         />
       )}
     </AppShell>

@@ -1,4 +1,4 @@
-import { User, Sparkles, SlidersHorizontal, BookOpen } from 'lucide-react'
+import { User, Sparkles, SlidersHorizontal, BookOpen, ChevronLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
 import type { DictionaryImportApplication } from '../import-service'
@@ -13,6 +13,7 @@ type SettingsScreenProps = {
   llmConfig?: LlmConfig
   onLlmConfigChange?: (config: LlmConfig) => void
   importApplication?: DictionaryImportApplication
+  onBack?: () => void
 }
 
 const clamp = (value: number) => Math.max(0, Number.isNaN(value) ? 0 : value)
@@ -185,6 +186,7 @@ export function SettingsScreen({
   llmConfig = { endpoint: '', model: '', apiKey: '' },
   onLlmConfigChange,
   importApplication,
+  onBack,
 }: SettingsScreenProps) {
   const [localLlm, setLocalLlm] = useState(llmConfig)
   const localLlmRef = useRef(localLlm)
@@ -203,13 +205,27 @@ export function SettingsScreen({
 
   return (
     <main className="mx-auto w-full max-w-[720px] px-5 py-8 sm:px-8 sm:py-12" aria-labelledby="settings-title">
-      <div className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-text-muted">
-        <SlidersHorizontal size={16} strokeWidth={1.8} aria-hidden="true" />
-        <span>設定</span>
-      </div>
-      <h1 id="settings-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
-        Settings
-      </h1>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-[.08em] text-text-muted">
+            <SlidersHorizontal size={16} strokeWidth={1.8} aria-hidden="true" />
+            <span>設定</span>
+          </div>
+          <h1 id="settings-title" className="m-0 mt-2 font-serif text-[clamp(32px,7vw,48px)] font-normal leading-tight tracking-[-.04em]">
+            Settings
+          </h1>
+        </div>
+        {onBack !== undefined && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent text-text-muted transition-[background-color,transform] duration-120 hover:bg-surface-hover hover:text-text active:scale-[.96]"
+            aria-label="戻る"
+          >
+            <ChevronLeft size={19} strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        )}
+      </header>
 
       <div className="mt-7 grid gap-4">
         <SettingGroup id="import-section" icon={BookOpen} title="Import">

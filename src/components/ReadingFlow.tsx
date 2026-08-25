@@ -511,8 +511,8 @@ export function ReadingFlow({
   const displayScore = quiz?.score ?? completionScore
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 text-text sm:px-6 sm:py-12" data-phase={phase}>
-      <div className="mx-auto w-full max-w-[760px]">
+    <main className="min-h-screen bg-background px-5 py-8 text-text sm:px-8 sm:py-12" data-phase={phase}>
+      <div className="mx-auto w-full max-w-[720px]">
         <header className="mb-8 border-b border-line pb-5">
           <div className="flex items-center justify-between gap-4 text-[11px] font-semibold tracking-[.1em] text-text-faint">
             <span>読解サイクル</span>

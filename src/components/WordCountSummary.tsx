@@ -43,34 +43,27 @@ function LimitAdjustModal({ open, title, available, value, disabled, onChange, o
   return (
     <dialog
       ref={dialogRef}
-      className="relative z-50 w-[min(320px,calc(100vw-32px))] rounded-[12px] border border-line bg-surface-raised p-5 text-text shadow-[0_18px_48px_rgba(0,0,0,.45)] [&::backdrop]:bg-black/60"
+      className="fixed z-50 inset-0 m-auto w-[min(320px,calc(100vw-32px))] rounded-[12px] border border-line bg-surface-raised p-5 text-text shadow-[0_18px_48px_rgba(0,0,0,.45)] [&::backdrop]:bg-black/60"
       onCancel={onClose}
       onClick={(event) => event.target === dialogRef.current && onClose()}
       aria-label={title}
     >
       <h2 className="m-0 text-sm font-semibold tracking-[.02em]">{title}</h2>
       <p className="m-0 mt-1 text-xs text-text-faint">利用可能: {available}語</p>
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-4 flex items-center justify-between gap-2">
         <span className="text-xs text-text-faint">上限</span>
-        <input
-          className="w-20 rounded-[7px] border border-line bg-background px-3 py-2 text-right text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-          type="number"
-          min={0}
-          value={draft}
-          disabled={disabled}
-          onChange={(event) => setDraft(clamp(parseInt(event.target.value, 10), 0))}
-          aria-label="上限を設定"
-        />
-        <span className="text-xs text-text-faint">語</span>
-        <button
-          className="ml-auto inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[7px] border border-line bg-surface px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-50"
-          type="button"
-          disabled={disabled}
-          onClick={() => setDraft((current) => current + 20)}
-        >
-          <Plus size={14} strokeWidth={2} aria-hidden="true" />
-          20
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            className="w-20 rounded-[7px] border border-line bg-background px-3 py-2 text-right text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            type="number"
+            min={0}
+            value={draft}
+            disabled={disabled}
+            onChange={(event) => setDraft(clamp(parseInt(event.target.value, 10), 0))}
+            aria-label="上限を設定"
+          />
+          <span className="text-xs text-text-faint">語</span>
+        </div>
       </div>
       <button
         className="mt-5 h-10 w-full cursor-pointer rounded-[7px] border-0 bg-accent text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50"
