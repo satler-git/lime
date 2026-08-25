@@ -72,6 +72,16 @@ export interface DictionaryParser {
   parse(text: string, sourceId?: string): DictionaryParseResult
 }
 
+/** Result from a parser that can inspect the file (e.g. a ZIP archive) to derive source metadata. */
+export type DictionaryFileParseResult = DictionaryParseResult & {
+  source?: DictionarySource
+}
+
+/** A parser that supports binary file import in addition to plain text. */
+export interface DictionaryFileParser extends DictionaryParser {
+  parseFile(file: File, sourceId?: string): Promise<DictionaryFileParseResult>
+}
+
 /** Replaceable persistence boundary for dictionary data. */
 export interface DictionaryRepository {
   saveMany(entries: readonly DictionaryEntry[], source?: DictionarySource): Promise<void>
@@ -82,7 +92,7 @@ export interface DictionaryRepository {
 
 export type DictionarySourceRegistration = {
   source: DictionarySource
-  parser: DictionaryParser
+  parser: DictionaryParser | DictionaryFileParser
 }
 
 export type DictionaryImportSummary = {
@@ -99,6 +109,7 @@ export interface DictionaryLookup {
 
 export interface DictionaryServicePort extends DictionaryLookup {
   importText(sourceId: string, text: string): Promise<DictionaryImportSummary>
+  importFile(sourceId: string, file: File): Promise<DictionaryImportSummary>
   listSources(): Promise<DictionarySource[]>
   clearSource(sourceId: string): Promise<void>
 }

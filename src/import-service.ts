@@ -3,13 +3,16 @@ import {
   EijiroSource,
   IndexedDbDictionaryRepository,
   WiktionarySource,
+  YomitanSource,
   eijiroParser,
   wiktionaryJsonlParser,
+  yomitanZipParser,
 } from './dictionary'
 import type { DictionaryImportSummary, DictionarySource } from './dictionary/types'
 
 export type DictionaryImportApplication = {
   importText: (sourceId: string, text: string) => Promise<DictionaryImportSummary>
+  importFile: (sourceId: string, file: File) => Promise<DictionaryImportSummary>
   listSources: () => Promise<DictionarySource[]>
 }
 
@@ -23,9 +26,11 @@ export function createDictionaryImportService(userId?: string): DictionaryImport
   const service = new DictionaryService(repository, [
     { source: EijiroSource, parser: eijiroParser },
     { source: WiktionarySource, parser: wiktionaryJsonlParser },
+    { source: YomitanSource, parser: yomitanZipParser },
   ])
   return {
     importText: service.importText.bind(service),
+    importFile: service.importFile.bind(service),
     listSources: service.listSources.bind(service),
   }
 }

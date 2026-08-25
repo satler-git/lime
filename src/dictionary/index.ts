@@ -14,6 +14,7 @@ export { normalizeDictionarySource, normalizeDictionarySourceId } from './types'
 export { EijiroParser, eijiroParser } from './eijiro-parser'
 export { WiktionaryJsonlParser, wiktionaryJsonlParser } from './wiktionary-parser'
 export type { WiktionaryJsonlParserOptions } from './wiktionary-parser'
+export { YomitanZipParser, yomitanZipParser } from './yomitan-parser'
 export {
   DictionaryEntrySourceMismatchError,
   DictionaryService,
@@ -21,6 +22,7 @@ export {
   DictionarySourceNotFoundError,
   EijiroSource,
   WiktionarySource,
+  YomitanSource,
 } from './service'
 export {
   InMemoryDictionaryRepository,

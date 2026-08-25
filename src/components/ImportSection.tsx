@@ -12,7 +12,10 @@ type ImportSource = {
 const sources: ImportSource[] = [
   { id: 'eijiro', name: '英辞郎', hint: 'BOOTH 版テキスト (.txt)' },
   { id: 'wiktionary', name: 'Wiktionary', hint: 'kaikki.org wiktextract JSONL (.jsonl)' },
+  { id: 'yomitan', name: 'Yomitan', hint: 'Yomitan 辞書 (.zip)' },
 ]
+
+const fileSources = new Set(['yomitan'])
 
 type ImportSectionProps = {
   application?: DictionaryImportApplication
@@ -22,6 +25,7 @@ export function ImportSection({ application }: ImportSectionProps) {
   const [selectedSource, setSelectedSource] = useState(sources[0].id)
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [textSource, setTextSource] = useState<'file' | 'clipboard' | null>(null)
   const [loading, setLoading] = useState(false)
   const [summary, setSummary] = useState<DictionaryImportSummary>()
@@ -38,7 +42,9 @@ export function ImportSection({ application }: ImportSectionProps) {
       .catch(() => setImportedSources([]))
   }, [application, summary])
 
-  const readFile = (file: File) => {
+  const isFileSource = fileSources.has(selectedSource)
+
+  const readTextFile = (file: File) => {
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result
@@ -50,14 +56,39 @@ export function ImportSection({ application }: ImportSectionProps) {
     setFileName(file.name)
   }
 
+  const handleFileSelect = (file: File) => {
+    setError(undefined)
+    setSummary(undefined)
+    if (isFileSource) {
+      setSelectedFile(file)
+      setFileName(file.name)
+      setText('')
+      setTextSource(null)
+    } else {
+      setSelectedFile(null)
+      readTextFile(file)
+    }
+  }
+
   const handleImport = async () => {
-    if (application === undefined || text.trim().length === 0) return
+    if (application === undefined) return
+    if (isFileSource) {
+      if (selectedFile === null) return
+    } else if (text.trim().length === 0) {
+      return
+    }
     setLoading(true)
     setError(undefined)
     setSummary(undefined)
     try {
-      const result = await application.importText(selectedSource, text)
+      const result = isFileSource
+        ? await application.importFile(selectedSource, selectedFile!)
+        : await application.importText(selectedSource, text)
       setSummary(result)
+      if (isFileSource) {
+        setSelectedFile(null)
+        setFileName('')
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Import に失敗しました')
     } finally {
@@ -66,6 +97,19 @@ export function ImportSection({ application }: ImportSectionProps) {
   }
 
   const sourceHint = sources.find((s) => s.id === selectedSource)?.hint ?? ''
+  const canImport = isFileSource
+    ? selectedFile !== null
+    : text.trim().length > 0
+
+  const handleSourceChange = (sourceId: string): void => {
+    setSelectedSource(sourceId)
+    setText('')
+    setFileName('')
+    setSelectedFile(null)
+    setTextSource(null)
+    setError(undefined)
+    setSummary(undefined)
+  }
 
   return (
     <section aria-labelledby={`import-title-${groupId}`}>
@@ -73,7 +117,7 @@ export function ImportSection({ application }: ImportSectionProps) {
         <Upload size={17} strokeWidth={1.8} aria-hidden="true" />
         Import
       </h2>
-      <p className="m-0 mt-1 text-xs text-text-faint">英辞郎テキストまたは Wiktionary JSONL を読み込みます。</p>
+      <p className="m-0 mt-1 text-xs text-text-faint">英辞郎テキスト、Wiktionary JSONL、または Yomitan ZIP を読み込みます。</p>
 
       {application === undefined && (
         <p className="mt-4 text-xs text-again" role="alert">ブラウザ環境でないと辞書データの import はできません。</p>
@@ -84,7 +128,7 @@ export function ImportSection({ application }: ImportSectionProps) {
         <div className="grid gap-2">
           {sources.map((source) => (
             <label key={source.id} className={`flex cursor-pointer items-center gap-2 rounded-[7px] border p-3 text-sm transition-[background-color,border-color] duration-120 hover:bg-surface-raised ${selectedSource === source.id ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}>
-              <input className="sr-only" type="radio" name={`import-source-${groupId}`} value={source.id} checked={selectedSource === source.id} onChange={() => setSelectedSource(source.id)} />
+              <input className="sr-only" type="radio" name={`import-source-${groupId}`} value={source.id} checked={selectedSource === source.id} onChange={() => handleSourceChange(source.id)} />
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selectedSource === source.id ? 'border-accent bg-accent' : 'border-text-faint'}`}>
                 {selectedSource === source.id && <span className="h-1.5 w-1.5 rounded-full bg-accent-ink" />}
               </span>
@@ -100,53 +144,56 @@ export function ImportSection({ application }: ImportSectionProps) {
           ref={fileInputRef}
           type="file"
           className="sr-only"
-          accept=".txt,.jsonl,.json"
+          accept={isFileSource ? '.zip' : '.txt,.jsonl,.json'}
           onChange={(event) => {
             const file = event.target.files?.[0]
-            if (file) readFile(file)
+            if (file) handleFileSelect(file)
           }}
           aria-label="ファイルを選択"
         />
         <button
-          className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-[7px] border px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-raised active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-45 ${textSource === 'file' ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}
+          className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-[7px] border px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-raised active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-45 ${(isFileSource && selectedFile !== null) || textSource === 'file' ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}
           type="button"
           disabled={application === undefined}
           onClick={() => fileInputRef.current?.click()}
         >
           <FileText size={15} strokeWidth={1.8} aria-hidden="true" />
-          <span className="max-w-[160px] truncate">{textSource === 'file' ? fileName : 'ファイルを選択'}</span>
-          {textSource === 'file' && <Check size={14} className="text-word-new" aria-hidden="true" />}
+          <span className="max-w-[160px] truncate">{fileName.length > 0 ? fileName : 'ファイルを選択'}</span>
+          {fileName.length > 0 && <Check size={14} className="text-word-new" aria-hidden="true" />}
         </button>
-        <button
-          className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-[7px] border px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-raised active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-45 ${textSource === 'clipboard' ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}
-          type="button"
-          disabled={application === undefined || !canPaste}
-          onClick={async () => {
-            try {
-              const pasted = await navigator.clipboard.readText()
-              setText(pasted)
-              setFileName('')
-              setTextSource('clipboard')
-            } catch {
-              setError('クリップボードの読み込みに失敗しました')
-            }
-          }}
-        >
-          <ClipboardPaste size={15} strokeWidth={1.8} aria-hidden="true" />
-          <span className="max-w-[160px] truncate">{textSource === 'clipboard' ? 'クリップボード貼り付け済み' : 'クリップボードから貼り付け'}</span>
-          {textSource === 'clipboard' && <Check size={14} className="text-word-new" aria-hidden="true" />}
-        </button>
+        {!isFileSource && (
+          <button
+            className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-[7px] border px-3 text-xs font-semibold transition-[background-color,transform] duration-120 hover:bg-surface-raised active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-45 ${textSource === 'clipboard' ? 'border-accent bg-surface-raised' : 'border-line bg-surface'}`}
+            type="button"
+            disabled={application === undefined || !canPaste}
+            onClick={async () => {
+              try {
+                const pasted = await navigator.clipboard.readText()
+                setText(pasted)
+                setFileName('')
+                setSelectedFile(null)
+                setTextSource('clipboard')
+              } catch {
+                setError('クリップボードの読み込みに失敗しました')
+              }
+            }}
+          >
+            <ClipboardPaste size={15} strokeWidth={1.8} aria-hidden="true" />
+            <span className="max-w-[160px] truncate">{textSource === 'clipboard' ? 'クリップボード貼り付け済み' : 'クリップボードから貼り付け'}</span>
+            {textSource === 'clipboard' && <Check size={14} className="text-word-new" aria-hidden="true" />}
+          </button>
+        )}
         <button
           className="ml-auto inline-flex h-10 cursor-pointer items-center gap-2 rounded-[7px] border-0 bg-accent px-4 text-xs font-semibold text-accent-ink transition-[background-color,transform] duration-120 hover:bg-accent-strong active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-45"
           type="button"
-          disabled={application === undefined || text.trim().length === 0 || loading}
+          disabled={application === undefined || !canImport || loading}
           onClick={() => void handleImport()}
         >
           {loading ? <Loader2 className="inline-block animate-spin" size={16} strokeWidth={2} aria-hidden="true" /> : 'Import を開始'}
         </button>
       </div>
 
-      {text.length > 0 && (
+      {!isFileSource && text.length > 0 && (
         <textarea
           className="mt-3 min-h-[80px] w-full resize-y rounded-[8px] border border-line bg-background p-3 text-sm leading-relaxed text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-45"
           placeholder={selectedSource === 'eijiro' ? '英辞郎テキストを貼り付け' : 'JSONL 行を貼り付け'}
@@ -155,6 +202,10 @@ export function ImportSection({ application }: ImportSectionProps) {
           disabled={application === undefined}
           aria-label="Import テキスト"
         />
+      )}
+
+      {isFileSource && selectedFile !== null && (
+        <p className="mt-3 text-xs text-text-faint">選択中: {selectedFile.name}</p>
       )}
 
       {error && <p className="mt-3 text-xs text-again" role="alert">{error}</p>}

@@ -2,8 +2,11 @@ import { normalizeDictionarySource, normalizeDictionarySourceId } from './types'
 import { normalizeWord } from '../domain/word'
 import type {
   DictionaryEntry,
+  DictionaryFileParseResult,
+  DictionaryFileParser,
   DictionaryImportSummary,
   DictionaryParseResult,
+  DictionaryParser,
   DictionaryRepository,
   DictionaryServicePort,
   DictionarySource,
@@ -117,31 +120,45 @@ export class DictionaryService implements DictionaryServicePort {
     return this.repository.lookup(word)
   }
 
-  async importText(sourceId: string, text: string): Promise<DictionaryImportSummary> {
-    const registration = this.registration(sourceId)
-    if (typeof text !== 'string') throw new TypeError('Dictionary input must be text')
+  private isFileParser(parser: DictionaryParser | DictionaryFileParser): parser is DictionaryFileParser {
+    return 'parseFile' in parser && typeof (parser as DictionaryFileParser).parseFile === 'function'
+  }
 
-    let result
+  private async importData(
+    sourceId: string,
+    data: string | File,
+  ): Promise<DictionaryImportSummary> {
+    const registration = this.registration(sourceId)
+
+    let result: DictionaryFileParseResult | undefined
     try {
-      result = registration.parser.parse(text, registration.source.id)
+      if (data instanceof File) {
+        if (!this.isFileParser(registration.parser)) {
+          throw new TypeError('Dictionary parser does not support file import')
+        }
+        result = await registration.parser.parseFile(data, registration.source.id)
+      } else {
+        result = registration.parser.parse(data, registration.source.id)
+      }
     } catch {
-      // A parser implementation must not expose input, credentials, or parser internals.
-      const errors: DictionaryParseError[] = text.trim()
+      const inputHasData = data instanceof File ? data.size > 0 : data.trim().length > 0
+      const errors: DictionaryParseError[] = inputHasData
         ? [{ line: 1, message: 'Dictionary parser failed' }]
         : []
       return { imported: 0, skipped: errors.length, errorCount: errors.length, errors }
     }
 
     const checkedResult = checkedParseResult(result)
+    const source = (result as DictionaryFileParseResult).source ?? registration.source
     // Keep a distinct error for a well-formed entry owned by another source;
     // malformed entries use the generic boundary error above and never echo data.
     for (const entry of checkedResult.entries) {
-      if (entry.sourceId !== registration.source.id) {
-        throw new DictionaryEntrySourceMismatchError(registration.source.id)
+      if (entry.sourceId !== source.id) {
+        throw new DictionaryEntrySourceMismatchError(source.id)
       }
     }
 
-    await this.repository.saveMany(checkedResult.entries, registration.source)
+    await this.repository.saveMany(checkedResult.entries, source)
     return {
       imported: checkedResult.entries.length,
       skipped: checkedResult.skipped,
@@ -152,6 +169,16 @@ export class DictionaryService implements DictionaryServicePort {
         message: 'Malformed dictionary record',
       })),
     }
+  }
+
+  async importText(sourceId: string, text: string): Promise<DictionaryImportSummary> {
+    if (typeof text !== 'string') throw new TypeError('Dictionary input must be text')
+    return this.importData(sourceId, text)
+  }
+
+  async importFile(sourceId: string, file: File): Promise<DictionaryImportSummary> {
+    if (!(file instanceof File)) throw new TypeError('Dictionary input must be a file')
+    return this.importData(sourceId, file)
   }
 
   listSources(): Promise<DictionarySource[]> {
@@ -173,4 +200,10 @@ export const WiktionarySource: DictionarySource = {
   id: 'wiktionary',
   name: 'Wiktionary (Wiktextract)',
   format: 'wiktextract-jsonl',
+}
+
+export const YomitanSource: DictionarySource = {
+  id: 'yomitan',
+  name: 'Yomitan',
+  format: 'yomitan-zip',
 }
