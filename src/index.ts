@@ -9,6 +9,21 @@ export * from './persistence/indexed-db-quiz-state-repository'
 export * from './persistence/d1-sync-repositories'
 export * from './sync'
 export * from './telemetry'
+export {
+  AuthClient,
+  AuthClientError,
+  AuthInvalidResponseError,
+  createAuthClient,
+  MAX_AUTH_RESPONSE_BODY_BYTES,
+} from './worker/auth/client'
+export type {
+  AuthClientErrorKind,
+  AuthClientLocation,
+  AuthFetch,
+  AuthRedirect,
+  AuthClientOptions,
+  AuthUser,
+} from './worker/auth/client'
 export * from './repositories/card-repository'
 export * from './scheduling/card-scheduler'
 export * from './scheduling/fsrs-scheduler'

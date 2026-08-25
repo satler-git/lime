@@ -4,6 +4,7 @@ import { D1AuthStore } from './d1-auth-store'
 import { authenticateSession } from './session-auth'
 import { webCryptoProvider, toBase64Url } from './crypto'
 import { buildGoogleAuthorizationUrl, exchangeGoogleCode, fetchGoogleProfile } from './oauth'
+import { sameOrigin } from '../origin'
 import type { AuthDependencies, Env } from './types'
 import {
   CODE_VERIFIER_COOKIE,
@@ -16,6 +17,12 @@ import {
 
 const GENERIC_AUTH_ERROR = 'Authentication failed'
 const UNAUTHORIZED_ERROR = 'Unauthorized'
+const FORBIDDEN_ERROR = 'Forbidden'
+const CACHE_CONTROL = 'private, no-store'
+
+const privateNoStore = (c: { header(name: string, value: string): void }): void => {
+  c.header('Cache-Control', CACHE_CONTROL)
+}
 
 const cookieOptions = (maxAge: number) => ({
   httpOnly: true,
@@ -35,6 +42,13 @@ export const createAuthApp = (dependencies: AuthDependencies = {}) => {
   const app = new Hono<{ Bindings: Env }>()
 
   const storeFor = (env: Env) => dependencies.store ?? new D1AuthStore(env.DB)
+
+  for (const path of ['/auth/google', '/auth/google/callback', '/auth/me', '/auth/logout'] as const) {
+    app.use(path, async (c, next) => {
+      privateNoStore(c)
+      await next()
+    })
+  }
 
   app.get('/auth/google', async (c) => {
     try {
@@ -72,8 +86,8 @@ export const createAuthApp = (dependencies: AuthDependencies = {}) => {
     }
 
     try {
-      const accessToken = await exchangeGoogleCode(c.env, code, codeVerifier, fetcher)
-      const profile = await fetchGoogleProfile(accessToken, fetcher)
+      const accessToken = await exchangeGoogleCode(c.env, code, codeVerifier, fetcher, c.req.raw.signal)
+      const profile = await fetchGoogleProfile(accessToken, fetcher, c.req.raw.signal)
       const store = storeFor(c.env)
       const timestamp = now()
       const user = await store.upsertUser(profile, await createId({ crypto: cryptoProvider }), timestamp)
@@ -92,13 +106,21 @@ export const createAuthApp = (dependencies: AuthDependencies = {}) => {
     try {
       const session = await authenticateSession(c, { store: storeFor(c.env), crypto: cryptoProvider, now })
       if (session === null) return c.json({ error: UNAUTHORIZED_ERROR }, 401)
-      return c.json({ user: session.user })
+      const { id, email, name, picture } = session.user
+      return c.json({ user: { id, email, name, picture } })
     } catch {
       return c.json({ error: GENERIC_AUTH_ERROR }, 500)
     }
   })
 
   app.post('/auth/logout', async (c) => {
+    const origin = c.req.raw.headers.get('Origin')
+    // Logout changes credential state, so browser CSRF protection is strict: an
+    // Origin must be present and must match the configured application origin.
+    if (origin === null || !sameOrigin(origin, c.env.APP_URL)) {
+      return c.json({ error: FORBIDDEN_ERROR }, 403)
+    }
+
     const sessionToken = getCookie(c, SESSION_COOKIE)
     let failed = false
     if (sessionToken !== undefined) {
@@ -115,7 +137,10 @@ export const createAuthApp = (dependencies: AuthDependencies = {}) => {
 
   app.onError(() => new Response(JSON.stringify({ error: GENERIC_AUTH_ERROR }), {
     status: 500,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'Cache-Control': CACHE_CONTROL,
+    },
   }))
 
   return app

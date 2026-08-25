@@ -130,9 +130,11 @@ BYO キーのため夜間 batch 生成はできないが、ストリーミング
 ## 同期 API の transport 契約
 
 - ブラウザの同期クライアントは `/api/sync` の GET/POST だけを扱い、認証 cookie は `credentials: "same-origin"` で同一オリジンの場合だけ送信する。クロスオリジン同期と CORS はサポートしない
-- `baseUrl` は相対パス、または同一オリジンのテスト・デプロイ先を解決するための絶対 URL に限る。`//` で始まる protocol-relative URL は、期待するオリジンに解決できてもサポートしない
+- `baseUrl` は相対パス、または同一オリジンのテスト・デプロイ先を解決するための絶対 URL に限る。相対 path prefix には query、fragment、whitespace、C0/control character を含めず、`//` で始まる protocol-relative URL、backslash、userinfo、cross-origin URL は拒否する
 - Worker の POST は `Origin` ヘッダーを必須とし、`APP_URL` の origin と完全一致する場合だけ受け付ける。GET はブラウザ以外のクライアントのため `Origin` 省略を許可するが、提示された origin は同一でなければならない。クロスオリジン同期と CORS はサポートしない
+- `POST /auth/logout` も state-changing なブラウザ操作として `Origin` を必須とし、`APP_URL` の origin と完全一致しない場合は常に generic 403 を返す。Origin 検証後の logout はセッションがなくても成功する idempotent な操作である
 - 成功した GET/POST の同期レスポンスは `Content-Type: application/json` を必須とし、`charset` などのパラメータは許可する。欠落または別の media type は generic な invalid-response として扱う
+- 同期の各文字列 field は UTF-8 8 KiB、各 serialized record/envelope は UTF-8 64 KiB、top-level type は GET/batch とも 1,000 件、session の `cardIds` と lookup events は各 1,000 件までとする。超過は validation で拒否し、切り捨てない
 - 同期レスポンスと batch request は hard cap と bounded reader を持ち、cache は常に `private, no-store` とする。GET は超過検出のため各 top-level type を hard cap + 1 件までサーバー側で materialize してから generic な 413 を返す場合があるが、結果を切り捨てない。未対応メソッドも `/api/sync` 上では JSON の 405 を返す
 
 ## 未決事項

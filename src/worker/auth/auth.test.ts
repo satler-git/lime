@@ -92,6 +92,7 @@ describe('Google OAuth foundation', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Invalid authentication request' })
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
     expect(fetcher).not.toHaveBeenCalled()
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_state=;')
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_code_verifier=;')
@@ -106,6 +107,7 @@ describe('Google OAuth foundation', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Invalid authentication request' })
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
     expect(fetcher).not.toHaveBeenCalled()
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_state=;')
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_code_verifier=;')
@@ -120,6 +122,7 @@ describe('Google OAuth foundation', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Invalid authentication request' })
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
     expect(fetcher).not.toHaveBeenCalled()
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_state=;')
     expect(response.headers.get('set-cookie')).toContain('lime_oauth_code_verifier=;')
@@ -128,12 +131,18 @@ describe('Google OAuth foundation', () => {
   it('upserts the Google user and creates a hashed session', async () => {
     const store = new FakeStore()
     const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'provider-access-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'provider-access-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         sub: 'google-1',
         email: 'reader@example.test',
         name: 'Reader',
-      }), { status: 200 }))
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
     const app = createAuthApp({
       store,
       fetcher,
@@ -147,6 +156,7 @@ describe('Google OAuth foundation', () => {
     const authorizationUrl = new URL(start.headers.get('location') as string)
     expect(authorizationUrl.searchParams.get('code_challenge')).toBe(`challenge:${codeVerifier}`)
     expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(start.headers.get('Cache-Control')).toBe('private, no-store')
     expect(start.headers.get('set-cookie')).toContain('lime_oauth_code_verifier=')
     expect(start.headers.get('set-cookie')).toContain('HttpOnly')
     expect(start.headers.get('set-cookie')).toContain('Secure')
@@ -156,6 +166,7 @@ describe('Google OAuth foundation', () => {
     }, env)
 
     expect(callback.status).toBe(302)
+    expect(callback.headers.get('Cache-Control')).toBe('private, no-store')
     expect(callback.headers.get('location')).toBe(env.APP_URL)
     expect(store.profile).toEqual({
       googleId: 'google-1',
@@ -189,30 +200,78 @@ describe('Google OAuth foundation', () => {
       headers: { Cookie: 'lime_session=opaque-token' },
     }, env)
     expect(authenticated.status).toBe(200)
-    expect(await authenticated.json()).toEqual({ user })
+    expect(authenticated.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(await authenticated.json()).toEqual({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+      },
+    })
 
     store.sessionToFind = null
     const expired = await app.request('/auth/me', {
       headers: { Cookie: 'lime_session=expired-token' },
     }, env)
     expect(expired.status).toBe(401)
+    expect(expired.headers.get('Cache-Control')).toBe('private, no-store')
     expect(await expired.json()).toEqual({ error: 'Unauthorized' })
   })
 
-  it('revokes the session and clears the cookie on logout', async () => {
+  it('requires a strict same-origin logout Origin and remains idempotent', async () => {
     const store = new FakeStore()
     const app = createAuthApp({ store, crypto: cryptoFor([]) })
 
+    for (const origin of [
+      'https://other.test',
+      'https://app.example.test/path',
+      'https://app.example.test?query',
+      'https://user@app.example.test',
+      'https://:@app.example.test',
+      'not-an-origin',
+      '',
+    ]) {
+      const forbidden = await app.request('/auth/logout', {
+        method: 'POST',
+        headers: { Cookie: 'lime_session=opaque-token', Origin: origin },
+      }, env)
+      expect(forbidden.status).toBe(403)
+      expect(await forbidden.json()).toEqual({ error: 'Forbidden' })
+      expect(forbidden.headers.get('Cache-Control')).toBe('private, no-store')
+    }
+
     const response = await app.request('/auth/logout', {
       method: 'POST',
-      headers: { Cookie: 'lime_session=opaque-token' },
+      headers: { Cookie: 'lime_session=opaque-token', Origin: 'https://app.example.test' },
     }, env)
 
     expect(response.status).toBe(204)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
     expect(store.deletedTokenHash).toBe('hash:opaque-token')
     expect(response.headers.get('set-cookie')).toContain('lime_session=;')
     expect(response.headers.get('set-cookie')).toContain('Max-Age=0')
     expect(response.headers.get('set-cookie')).toContain('HttpOnly')
     expect(response.headers.get('set-cookie')).toContain('Secure')
+
+    const noOrigin = await app.request('/auth/logout', {
+      method: 'POST',
+      headers: { Cookie: 'lime_session=opaque-token' },
+    }, env)
+    expect(noOrigin.status).toBe(403)
+    expect(await noOrigin.json()).toEqual({ error: 'Forbidden' })
+    expect(noOrigin.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(noOrigin.headers.get('set-cookie')).toBeNull()
+
+    const failedStore = new FakeStore()
+    failedStore.deleteSession = async () => { throw new Error('database detail') }
+    const failed = await createAuthApp({ store: failedStore, crypto: cryptoFor([]) }).request('/auth/logout', {
+      method: 'POST',
+      headers: { Cookie: 'lime_session=opaque-token', Origin: 'https://app.example.test' },
+    }, env)
+    expect(failed.status).toBe(500)
+    expect(failed.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(await failed.json()).toEqual({ error: 'Authentication failed' })
+    expect(failed.headers.get('set-cookie')).toContain('lime_session=;')
   })
 })
