@@ -1,6 +1,6 @@
 name = "lime-auth"
 main = "src/worker/index.ts"
-compatibility_date = "2025-01-01"
+compatibility_date = "2026-08-25"
 
 [vars]
 APP_URL = "https://example.test"
@@ -12,3 +12,9 @@ binding = "DB"
 database_name = "lime-auth"
 database_id = "889ba714-09f7-4402-9480-d387bc42bf19"
 migrations_dir = "migrations"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = ["/auth/*", "/api/*"]

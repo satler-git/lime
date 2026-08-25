@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import type { LimeRoute } from '../routes'
 
 type AppShellProps = {
-  route: LimeRoute
   onNavigate: (route: LimeRoute) => void
   children: ReactNode
 }

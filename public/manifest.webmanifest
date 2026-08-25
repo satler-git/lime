@@ -1,7 +1,7 @@
 {
   "name": "lime",
   "short_name": "lime",
-  "start_url": "/",
+  "start_url": "/today",
   "display": "standalone",
   "background_color": "#151714",
   "theme_color": "#151714",

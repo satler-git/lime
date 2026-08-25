@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Route, Routes, useNavigate } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { CardManagerView } from './components/CardManagerView'
 import { ReadingScreen } from './components/ReadingScreen'
@@ -15,17 +16,13 @@ import {
 import { createDictionaryImportService } from './import-service'
 import type { Card } from './domain/card'
 import { createTodayPlan, type TodayPlan } from './planning/today-plan'
-import { isLimeRoute, type LimeRoute } from './routes'
+import { isLimeRoute, limeRouteToPath, type LimeRoute } from './routes'
 import { loadSettings, saveSettings, type LlmConfig } from './settings-storage'
 import { useAuth } from './auth'
 import { useCardService } from './use-card-service'
 import { useLimits } from './use-limits'
 import { useSync } from './use-sync'
 import { useTelemetryQueue } from './use-telemetry-queue'
-
-export type AppProps = {
-  initialRoute?: LimeRoute
-}
 
 const DEFAULT_LLM_CONFIG: LlmConfig = { endpoint: '', model: '', apiKey: '' }
 const PLAN_PROGRESS_KEY = 'lime-today-progress'
@@ -72,14 +69,30 @@ function saveStoredProgress(progress: StoredProgress): void {
   }
 }
 
-export default function App({ initialRoute = 'today' }: AppProps) {
-  const [route, setRoute] = useState<LimeRoute>(() => (isLimeRoute(initialRoute) ? initialRoute : 'today'))
-  const [llmConfig, setLlmConfig] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
-  const navigate = useCallback((next: LimeRoute) => {
-    if (isLimeRoute(next)) {
-      setRoute(next)
+function useLimeNavigate(): (route: LimeRoute) => void {
+  const navigate = useNavigate()
+  return useCallback((route: LimeRoute) => {
+    if (isLimeRoute(route)) {
+      navigate(limeRouteToPath(route))
     }
-  }, [])
+  }, [navigate])
+}
+
+function useNavigateBack(fallback = '/today'): () => void {
+  const navigate = useNavigate()
+  return useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate(fallback)
+    }
+  }, [navigate, fallback])
+}
+
+export default function App() {
+  const [llmConfig, setLlmConfig] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
+  const limeNavigate = useLimeNavigate()
+  const navigateBack = useNavigateBack()
 
   const { user, isLoading: isAuthLoading } = useAuth()
   const { reviewLimit, newLimit, setReviewLimit, setNewLimit, isLoading: isLimitsLoading } = useLimits(user, isAuthLoading)
@@ -207,9 +220,9 @@ export default function App({ initialRoute = 'today' }: AppProps) {
       setCurrentCycleIndex(result.cycle)
     } else {
       setCurrentCycleIndex(todayPlan.cycles.length)
-      navigate('today')
+      limeNavigate('today')
     }
-  }, [todayPlan, navigate])
+  }, [todayPlan, limeNavigate])
 
   const reviewCount = todayPlan.selectedCards.filter((card) => card.state !== 'new').length
   const newCount = todayPlan.selectedCards.filter((card) => card.state === 'new').length
@@ -224,63 +237,75 @@ export default function App({ initialRoute = 'today' }: AppProps) {
   const totalCycles = Math.max(1, todayPlan.cycles.length)
   const cycle = Math.min(currentCycleIndex + 1, totalCycles)
 
+  const todayOverview = (
+    <TodayOverview
+      reviewCount={reviewCount}
+      newCount={newCount}
+      reviewLimit={reviewLimit}
+      newLimit={newLimit}
+      todayTarget={Math.max(1, todayPlan.selectedCards.length)}
+      todayCompleted={todayCompleted}
+      cycle={cycle}
+      totalCycles={totalCycles}
+      recentSessions={recentSessions}
+      isLoading={isLimitsLoading}
+      isStartButtonDisabled={isStartButtonDisabled}
+      syncError={syncError}
+      telemetryError={telemetryError?.message}
+      onReviewLimitChange={setReviewLimit}
+      onNewLimitChange={setNewLimit}
+      onStartReading={() => limeNavigate('reading')}
+      onOpenSettings={() => limeNavigate('settings')}
+      onOpenCards={() => limeNavigate('cards')}
+      cardService={cardService}
+    />
+  )
+
+  const readingScreen = (
+    <ReadingScreen
+      todayPlan={todayPlan}
+      contentProvider={contentProvider}
+      cardService={cardService}
+      cardRepository={cardRepository}
+      userId={userId}
+      telemetry={telemetry}
+      cycleIndex={currentCycleIndex}
+      onSessionComplete={handleSessionComplete}
+    />
+  )
+
+  const settingsScreen = (
+    <SettingsScreen
+      reviewLimit={reviewLimit}
+      newLimit={newLimit}
+      onReviewLimitChange={setReviewLimit}
+      onNewLimitChange={setNewLimit}
+      llmConfig={llmConfig}
+      onLlmConfigChange={setLlmConfig}
+      importApplication={importApplication}
+      onBack={navigateBack}
+    />
+  )
+
+  const cardsScreen = (
+    <CardManagerView
+      cardService={cardService}
+      dictionaryApplication={importApplication}
+      onBack={navigateBack}
+      onCardsChanged={() => { void loadCards() }}
+    />
+  )
+
   return (
-    <AppShell route={route} onNavigate={navigate}>
-      {route === 'today' && (
-        <TodayOverview
-          reviewCount={reviewCount}
-          newCount={newCount}
-          reviewLimit={reviewLimit}
-          newLimit={newLimit}
-          todayTarget={Math.max(1, todayPlan.selectedCards.length)}
-          todayCompleted={todayCompleted}
-          cycle={cycle}
-          totalCycles={totalCycles}
-          recentSessions={recentSessions}
-          isLoading={isLimitsLoading}
-          isStartButtonDisabled={isStartButtonDisabled}
-          syncError={syncError}
-          telemetryError={telemetryError?.message}
-          onReviewLimitChange={setReviewLimit}
-          onNewLimitChange={setNewLimit}
-          onStartReading={() => navigate('reading')}
-          onOpenSettings={() => navigate('settings')}
-          onOpenCards={() => navigate('cards')}
-          cardService={cardService}
-        />
-      )}
-      {route === 'reading' && (
-        <ReadingScreen
-          todayPlan={todayPlan}
-          contentProvider={contentProvider}
-          cardService={cardService}
-          cardRepository={cardRepository}
-          userId={userId}
-          telemetry={telemetry}
-          cycleIndex={currentCycleIndex}
-          onSessionComplete={handleSessionComplete}
-        />
-      )}
-      {route === 'cards' && (
-        <CardManagerView
-          cardService={cardService}
-          dictionaryApplication={importApplication}
-          onBack={() => navigate('today')}
-          onCardsChanged={() => { void loadCards() }}
-        />
-      )}
-      {route === 'settings' && (
-        <SettingsScreen
-          reviewLimit={reviewLimit}
-          newLimit={newLimit}
-          onReviewLimitChange={setReviewLimit}
-          onNewLimitChange={setNewLimit}
-          llmConfig={llmConfig}
-          onLlmConfigChange={setLlmConfig}
-          importApplication={importApplication}
-          onBack={() => navigate('today')}
-        />
-      )}
+    <AppShell onNavigate={limeNavigate}>
+      <Routes>
+        <Route path="/" element={todayOverview} />
+        <Route path={limeRouteToPath('today')} element={todayOverview} />
+        <Route path={limeRouteToPath('reading')} element={readingScreen} />
+        <Route path={limeRouteToPath('settings')} element={settingsScreen} />
+        <Route path={limeRouteToPath('cards')} element={cardsScreen} />
+        <Route path="*" element={todayOverview} />
+      </Routes>
     </AppShell>
   )
 }
