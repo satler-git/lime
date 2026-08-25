@@ -8,15 +8,21 @@ import {
   wiktionaryJsonlParser,
   yomitanZipParser,
 } from './dictionary'
-import type { DictionaryImportSummary, DictionarySource } from './dictionary/types'
+import type { DictionaryEntry, DictionaryImportSummary, DictionarySource } from './dictionary/types'
 
-export type DictionaryImportApplication = {
+export type DictionaryManagementApplication = {
+  lookup: (word: string) => Promise<DictionaryEntry[]>
   importText: (sourceId: string, text: string) => Promise<DictionaryImportSummary>
   importFile: (sourceId: string, file: File) => Promise<DictionaryImportSummary>
   listSources: () => Promise<DictionarySource[]>
+  updateSource: (source: DictionarySource) => Promise<void>
+  removeSource: (sourceId: string) => Promise<void>
 }
 
-export function createDictionaryImportService(userId?: string): DictionaryImportApplication | undefined {
+/** @deprecated Use DictionaryManagementApplication. */
+export type DictionaryImportApplication = DictionaryManagementApplication
+
+export function createDictionaryImportService(userId?: string): DictionaryManagementApplication | undefined {
   if (typeof globalThis.indexedDB === 'undefined') {
     return undefined
   }
@@ -29,8 +35,11 @@ export function createDictionaryImportService(userId?: string): DictionaryImport
     { source: YomitanSource, parser: yomitanZipParser },
   ])
   return {
+    lookup: service.lookup.bind(service),
     importText: service.importText.bind(service),
     importFile: service.importFile.bind(service),
     listSources: service.listSources.bind(service),
+    updateSource: service.updateSource.bind(service),
+    removeSource: service.removeSource.bind(service),
   }
 }

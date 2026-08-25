@@ -1,9 +1,9 @@
 import { User, Sparkles, SlidersHorizontal, BookOpen, ChevronLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
-import type { DictionaryImportApplication } from '../import-service'
+import type { DictionaryManagementApplication } from '../import-service'
 import type { LlmConfig } from '../settings-storage'
-import { ImportSection } from './ImportSection'
+import { DictionarySourceManager } from './DictionarySourceManager'
 
 type SettingsScreenProps = {
   reviewLimit?: number
@@ -12,7 +12,7 @@ type SettingsScreenProps = {
   onNewLimitChange?: (limit: number) => void
   llmConfig?: LlmConfig
   onLlmConfigChange?: (config: LlmConfig) => void
-  importApplication?: DictionaryImportApplication
+  importApplication?: DictionaryManagementApplication
   onBack?: () => void
 }
 
@@ -81,6 +81,9 @@ function TextInput({
   type = 'text',
   placeholder = '',
   disabled = false,
+  autoComplete,
+  name,
+  masked,
 }: {
   label: string
   value: string
@@ -88,16 +91,21 @@ function TextInput({
   type?: 'text' | 'password'
   placeholder?: string
   disabled?: boolean
+  autoComplete?: string
+  name?: string
+  masked?: boolean
 }) {
   return (
     <div className="grid gap-1.5">
       <label className="text-xs text-text-muted">{label}</label>
       <input
-        className="rounded-[7px] border border-line bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+        className={`rounded-[7px] border border-line bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-45 ${masked ? '[-webkit-text-security:disc]' : ''}`}
         type={type}
         value={value}
         placeholder={placeholder}
         disabled={disabled}
+        autoComplete={autoComplete}
+        name={name}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
@@ -228,8 +236,8 @@ export function SettingsScreen({
       </header>
 
       <div className="mt-7 grid gap-4">
-        <SettingGroup id="import-section" icon={BookOpen} title="Import">
-          <ImportSection application={importApplication} />
+        <SettingGroup id="dictionary-section" icon={BookOpen} title="Dictionary">
+          <DictionarySourceManager application={importApplication} />
         </SettingGroup>
 
         <SettingGroup id="max-section" icon={SlidersHorizontal} title="Max">
@@ -259,15 +267,20 @@ export function SettingsScreen({
             />
             <TextInput
               label="Model"
+              name="llm-model"
               value={localLlm.model}
               placeholder="gpt-4o-mini"
+              autoComplete="off"
               onChange={(model) => { updateLlm({ model }) }}
             />
             <TextInput
               label="API Key"
+              name="llm-api-key"
               value={localLlm.apiKey}
-              type="password"
+              type="text"
+              masked
               placeholder="sk-..."
+              autoComplete="off"
               onChange={(apiKey) => { updateLlm({ apiKey }) }}
             />
           </div>

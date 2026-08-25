@@ -5,7 +5,7 @@ import type { Rating } from '../domain/card'
 import type { TextPosition } from '../session/types'
 import { DictionaryText } from './DictionaryText'
 import { RatingGroup } from './RatingGroup'
-import type { TargetWordData, WordAnchor } from './types'
+import type { TargetWordData, TargetWordSubEntry, WordAnchor } from './types'
 
 type DictionaryPopoverProps = {
   word: TargetWordData
@@ -21,6 +21,27 @@ type DictionaryPopoverProps = {
   /** Restores focus to the word control that opened this UI-only popup. */
   onRestoreFocus?: () => void
   reviewPending?: boolean
+}
+
+function getSubEntries(word: TargetWordData): TargetWordSubEntry[] {
+  const first: TargetWordSubEntry = {
+    pronunciation: word.pronunciation,
+    partOfSpeech: word.partOfSpeech,
+    definition: word.definition,
+    examples: word.examples,
+  }
+  return word.entries ? [first, ...word.entries] : [first]
+}
+
+function getSubEntriesWithOffsets(word: TargetWordData): { entry: TargetWordSubEntry; exampleOffset: number }[] {
+  const subEntries = getSubEntries(word)
+  const result: { entry: TargetWordSubEntry; exampleOffset: number }[] = []
+  let offset = 0
+  for (const entry of subEntries) {
+    result.push({ entry, exampleOffset: offset })
+    offset += entry.examples.length
+  }
+  return result
 }
 
 const closeButtonClass = 'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent p-0 transition-[background-color,transform] duration-120 hover:bg-surface-hover active:scale-[.96] disabled:cursor-wait disabled:opacity-60'
@@ -123,15 +144,32 @@ export function DictionaryPopover({ word, reviewable, anchor, rating, onRate, on
           {!inlineClose && <div className="absolute right-3 top-3">{closeButton(closeButtonClass)}</div>}
           <div className={headerClass}>
             <h2 ref={titleRef} id={titleId} className="m-0 min-w-0 max-w-full break-words font-serif text-[34px] font-medium tracking-[-.04em]">{word.word}</h2>
-            <span className="text-xs text-text-faint">{word.pronunciation}</span>
             {inlineClose && closeButton(closeButtonClass)}
           </div>
-          <p className="mt-1 text-xs text-text-muted">{word.partOfSpeech}</p>
-          <p className="mt-4 text-[15px] leading-normal">{word.definition}</p>
-          <div className="mt-[18px] border-t border-line pt-[15px]">
-            <p className="m-0 flex items-center gap-1.5 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={14} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
-            {word.examples.map((example, index) => <p className="mt-3 font-serif text-[15px] leading-normal text-text-muted" key={`${word.word}-${index}`}>{typeof example === 'string' ? <DictionaryText text={example} entry={word.word} onOpenAt={(selected, exampleAnchor, character, opener) => onOpenWord?.(selected, exampleAnchor, { paragraph: index, character }, opener)} /> : example}</p>)}
-          </div>
+          {getSubEntriesWithOffsets(word).map(({ entry, exampleOffset }, index) => (
+            <div key={`${word.word}-${index}`} className={index > 0 ? 'mt-4 border-t border-line pt-4' : ''}>
+              {(entry.pronunciation || entry.partOfSpeech) && (
+                <div className={`flex flex-wrap items-baseline gap-2 ${index === 0 ? '' : 'mt-1'}`}>
+                  {entry.pronunciation && <span className="text-xs text-text-faint">{entry.pronunciation}</span>}
+                  {entry.partOfSpeech && <span className="text-xs text-text-muted">{entry.partOfSpeech}</span>}
+                </div>
+              )}
+              <p className="mt-1 text-[15px] leading-normal">{entry.definition}</p>
+              {entry.examples.length > 0 && (
+                <div className="mt-[18px] border-t border-line pt-[15px]">
+                  <p className="m-0 flex items-center gap-1.5 text-[10px] font-semibold tracking-[.1em] text-text-faint"><BookOpen size={14} strokeWidth={1.8} aria-hidden="true" /> 例文</p>
+                  {entry.examples.map((example, exampleIndex) => {
+                    const paragraph = exampleOffset + exampleIndex
+                    return (
+                      <p className="mt-3 font-serif text-[15px] leading-normal text-text-muted" key={`${word.word}-${paragraph}`}>
+                        {typeof example === 'string' ? <DictionaryText text={example} entry={word.word} onOpenAt={(selected, exampleAnchor, character, opener) => onOpenWord?.(selected, exampleAnchor, { paragraph, character }, opener)} /> : example}
+                      </p>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
           {actionError && <p id={actionErrorId} className="mt-3 text-xs text-again" role="alert">{actionError}</p>}
           {actionPending && <p className="mt-3 text-xs text-text-faint" role="status" aria-live="polite">{pendingAction === 'undo' ? '評価を元に戻しています' : '評価を保存しています'}</p>}
           {canAdd ? (

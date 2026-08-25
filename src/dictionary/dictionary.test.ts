@@ -158,10 +158,10 @@ describe('dictionary repositories and service', () => {
       { sourceId: 'later' },
     ])
     await expect(repository.listSources()).resolves.toMatchObject([
-      { id: 'later' },
+      { id: 'highest' },
       { id: 'priority' },
       { id: 'same-priority' },
-      { id: 'highest' },
+      { id: 'later' },
     ])
     await repository.close()
   })
@@ -244,6 +244,19 @@ describe('dictionary repositories and service', () => {
     expect(() => service.register({ source: { ...eijiroSource, id: ' eijiro ' }, parser })).toThrow('already registered')
     await expect(service.importText(' source ', 'input')).rejects.toThrow('source source')
     await expect(repository.lookup('word')).resolves.toEqual([])
+  })
+
+  it('allows re-importing a built-in source after it has been removed', async () => {
+    const service = new DictionaryService(new InMemoryDictionaryRepository(), [
+      { source: eijiroSource, parser: new EijiroParser() },
+    ])
+    const source = eijiroSource.id
+    const text = '■word : meaning'
+    await expect(service.importText(source, text)).resolves.toMatchObject({ imported: 1 })
+    await service.removeSource(source)
+    await expect(service.listSources()).resolves.toEqual([])
+    await expect(service.importText(source, text)).resolves.toMatchObject({ imported: 1 })
+    await expect(service.listSources()).resolves.toMatchObject([{ id: source }])
   })
 
   it('returns import summaries, rejects unknown sources, and supports source-scoped clear', async () => {
@@ -458,6 +471,22 @@ describe('dictionary repositories and service', () => {
     await repository.close()
   })
 
+  it('excludes disabled sources from lookup and keeps them in listSources', async () => {
+    const repository = new InMemoryDictionaryRepository()
+    await repository.saveMany([makeEntry('enabled', 'word', 'enabled def')], { id: 'enabled', name: 'Enabled', format: 'test', priority: 0 })
+    await repository.saveMany([makeEntry('disabled', 'word', 'disabled def')], { id: 'disabled', name: 'Disabled', format: 'test', priority: 1, enabled: false })
+    await expect(repository.lookup('word')).resolves.toMatchObject([{ sourceId: 'enabled' }])
+    await expect(repository.listSources()).resolves.toMatchObject([{ id: 'enabled' }, { id: 'disabled' }])
+  })
+
+  it('updates source metadata without touching entries', async () => {
+    const repository = new InMemoryDictionaryRepository()
+    await repository.saveMany([makeEntry('source', 'word', 'meaning')], { id: 'source', name: 'Source', format: 'test' })
+    await repository.updateSource({ id: 'source', name: 'Updated', format: 'test', enabled: false, priority: 5 })
+    await expect(repository.listSources()).resolves.toMatchObject([{ id: 'source', name: 'Updated', enabled: false, priority: 5 }])
+    await expect(repository.lookup('word')).resolves.toEqual([])
+  })
+
   it('round trips through the normalized-headword index, isolates users, and clears one source', async () => {
     const dbName = `dictionary-test-${Date.now()}-${Math.random()}`
     const alice = new IndexedDbDictionaryRepository({ dbName, userId: 'alice' })
@@ -489,5 +518,39 @@ describe('dictionary repositories and service', () => {
     // Namespace names are intentionally derived by the shared helper; remove both databases.
     databases.push(databaseName)
     databases.push(namespaceDatabaseName(dbName, 'bob'))
+  })
+
+  it('preserves priority and enabled when the same source is re-imported', async () => {
+    const repository = new InMemoryDictionaryRepository()
+    const source: DictionarySource = { id: 'source', name: 'Source', format: 'test', priority: 2, enabled: false }
+    await repository.saveMany([makeEntry('source', 'word', 'meaning')], source)
+    await expect(repository.listSources()).resolves.toMatchObject([{ priority: 2, enabled: false }])
+    await repository.saveMany([makeEntry('source', 'word', 'second')], { id: 'source', name: 'Source', format: 'test' })
+    await expect(repository.listSources()).resolves.toMatchObject([{ priority: 2, enabled: false }])
+  })
+
+  it('preserves priority and enabled when re-importing in IndexedDB', async () => {
+    const dbName = `dictionary-reimport-test-${Date.now()}-${Math.random()}`
+    databases.push(dbName)
+    const repository = new IndexedDbDictionaryRepository({ dbName })
+    const source: DictionarySource = { id: 'source', name: 'Source', format: 'test', priority: 2, enabled: false }
+    await repository.saveMany([makeEntry('source', 'word', 'meaning')], source)
+    await repository.updateSource({ id: 'source', name: 'Source', format: 'test', priority: 5, enabled: true })
+    await repository.saveMany([makeEntry('source', 'word', 'second')], { id: 'source', name: 'Source', format: 'test' })
+    await expect(repository.listSources()).resolves.toMatchObject([{ priority: 5, enabled: true }])
+    await repository.close()
+  })
+
+  it('updates source metadata and respects enabled in IndexedDB', async () => {
+    const dbName = `dictionary-indexed-update-test-${Date.now()}-${Math.random()}`
+    databases.push(dbName)
+    const repository = new IndexedDbDictionaryRepository({ dbName })
+    await repository.saveMany([makeEntry('source', 'word', 'meaning')], { id: 'source', name: 'Source', format: 'test' })
+    await repository.updateSource({ id: 'source', name: 'Updated', format: 'test', enabled: false, priority: 3 })
+    await expect(repository.listSources()).resolves.toMatchObject([{ id: 'source', name: 'Updated', enabled: false, priority: 3 }])
+    await expect(repository.lookup('word')).resolves.toEqual([])
+    await repository.updateSource({ id: 'source', name: 'Updated', format: 'test', enabled: true })
+    await expect(repository.lookup('word')).resolves.toMatchObject([{ sourceId: 'source' }])
+    await repository.close()
   })
 })

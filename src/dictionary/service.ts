@@ -150,6 +150,11 @@ export class DictionaryService implements DictionaryServicePort {
 
     const checkedResult = checkedParseResult(result)
     const source = (result as DictionaryFileParseResult).source ?? registration.source
+    // File parsers such as Yomitan derive a concrete source id from the archive.
+    // Register that source under the same parser so later updates or removals work.
+    if (!this.registrations.has(source.id)) {
+      this.registrations.set(source.id, { source, parser: registration.parser })
+    }
     // Keep a distinct error for a well-formed entry owned by another source;
     // malformed entries use the generic boundary error above and never echo data.
     for (const entry of checkedResult.entries) {
@@ -158,7 +163,11 @@ export class DictionaryService implements DictionaryServicePort {
       }
     }
 
-    await this.repository.saveMany(checkedResult.entries, source)
+    const chunkSize = 1000
+    for (let i = 0; i < checkedResult.entries.length; i += chunkSize) {
+      const chunk = checkedResult.entries.slice(i, i + chunkSize)
+      await this.repository.saveMany(chunk, i === 0 ? source : undefined)
+    }
     return {
       imported: checkedResult.entries.length,
       skipped: checkedResult.skipped,
@@ -185,8 +194,22 @@ export class DictionaryService implements DictionaryServicePort {
     return this.repository.listSources()
   }
 
+  async updateSource(source: DictionarySource): Promise<void> {
+    const metadata = normalizeDictionarySource(source)
+    const existing = this.registrations.get(metadata.id)
+    if (existing !== undefined) {
+      this.registrations.set(metadata.id, { ...existing, source: metadata })
+    }
+    await this.repository.updateSource(metadata)
+  }
+
+  async removeSource(sourceId: string): Promise<void> {
+    const normalizedSourceId = normalizeDictionarySourceId(sourceId)
+    await this.repository.clearSource(normalizedSourceId)
+  }
+
   clearSource(sourceId: string): Promise<void> {
-    return this.repository.clearSource(normalizeDictionarySourceId(sourceId))
+    return this.removeSource(sourceId)
   }
 }
 

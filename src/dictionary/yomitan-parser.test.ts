@@ -84,19 +84,19 @@ describe('YomitanZipParser', () => {
     const result = await new YomitanZipParser().parseFile(file)
 
     expect(result.source).toEqual({
-      id: 'test-yomitan',
+      id: 'yomitan-test-yomitan',
       name: 'Test Yomitan (1)',
       format: 'yomitan-zip',
     })
     expect(result.skipped).toBe(0)
     expect(result.errors).toEqual([])
 
-    const entries = result.entries.filter((entry) => entry.sourceId === 'test-yomitan')
+    const entries = result.entries.filter((entry) => entry.sourceId === 'yomitan-test-yomitan')
     expect(entries).toHaveLength(4)
 
     expect(entries).toContainEqual(expect.objectContaining({
       word: 'apple',
-      sourceId: 'test-yomitan',
+      sourceId: 'yomitan-test-yomitan',
       partOfSpeech: 'n',
       definitions: ['A round fruit.'],
       examples: [],
@@ -104,7 +104,7 @@ describe('YomitanZipParser', () => {
 
     expect(entries).toContainEqual(expect.objectContaining({
       word: 'run',
-      sourceId: 'test-yomitan',
+      sourceId: 'yomitan-test-yomitan',
       partOfSpeech: 'v',
       definitions: ['To move quickly on foot.'],
       examples: [],
@@ -114,14 +114,14 @@ describe('YomitanZipParser', () => {
     expect(free).toHaveLength(2)
     expect(free[0]).toMatchObject({
       word: 'free',
-      sourceId: 'test-yomitan',
+      sourceId: 'yomitan-test-yomitan',
       partOfSpeech: 'adj',
       definitions: ['Not under the control of another.'],
       examples: ['The prisoner was finally free.'],
     })
     expect(free[1]).toMatchObject({
       word: 'free',
-      sourceId: 'test-yomitan',
+      sourceId: 'yomitan-test-yomitan',
       partOfSpeech: 'adj',
       definitions: ['Available without cost.'],
       examples: [],
@@ -143,7 +143,7 @@ describe('YomitanZipParser', () => {
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0]).toMatchObject({
       word: '打',
-      sourceId: 'test',
+      sourceId: 'yomitan-test',
       pronunciation: 'だ',
       definitions: ['da definition'],
     })
@@ -166,6 +166,19 @@ describe('YomitanZipParser', () => {
     expect(result.entries[0]?.word).toBe('valid')
     expect(result.skipped).toBe(1)
     expect(result.errors).toHaveLength(1)
+  })
+
+  it('fails cleanly when index.json is malformed', async () => {
+    const file = makeZipFile({
+      'index.json': 'not valid json',
+      'term_bank_1.json': JSON.stringify([['word', '', 'n', 'n', 0, ['def'], 1, '']]),
+    })
+
+    const result = await new YomitanZipParser().parseFile(file)
+    expect(result.entries).toEqual([])
+    expect(result.errors).toHaveLength(1)
+    expect(result.skipped).toBe(1)
+    expect(result.source).toBeUndefined()
   })
 
   it('fails cleanly when index.json is missing', async () => {
@@ -198,14 +211,44 @@ describe('YomitanZipParser', () => {
 
     expect(summary).toMatchObject({ imported: 1, skipped: 0, errorCount: 0 })
     await expect(repository.lookup('hello')).resolves.toMatchObject([{
-      sourceId: 'service-test',
+      sourceId: 'yomitan-service-test',
       word: 'hello',
       definitions: ['A greeting.'],
     }])
     await expect(repository.listSources()).resolves.toMatchObject([{
-      id: 'service-test',
+      id: 'yomitan-service-test',
       name: 'Service Test (1)',
       format: 'yomitan-zip',
     }])
+  })
+
+  it('registers derived Yomitan source ids so they can be updated and removed', async () => {
+    const index = { title: 'Dynamic Test', format: 3, revision: '1' }
+    const termBank = [
+      ['hello', '', 'n', 'n', 0, ['A greeting.'], 1, ''],
+    ]
+
+    const file = makeZipFile({
+      'index.json': JSON.stringify(index),
+      'term_bank_1.json': JSON.stringify(termBank),
+    })
+
+    const repository = new InMemoryDictionaryRepository()
+    const service = new DictionaryService(repository, [
+      { source: YomitanSource, parser: new YomitanZipParser() },
+    ])
+    await service.importFile('yomitan', file)
+
+    await service.updateSource({ id: 'yomitan-dynamic-test', name: 'Dynamic Updated', format: 'yomitan-zip', enabled: false })
+    await expect(repository.listSources()).resolves.toMatchObject([{
+      id: 'yomitan-dynamic-test',
+      name: 'Dynamic Updated',
+      enabled: false,
+    }])
+    await expect(repository.lookup('hello')).resolves.toEqual([])
+
+    await service.removeSource('yomitan-dynamic-test')
+    await expect(repository.listSources()).resolves.toEqual([])
+    await expect(repository.lookup('hello')).resolves.toEqual([])
   })
 })

@@ -13,6 +13,8 @@ export type DictionarySource = {
   format: string
   /** Lower values are returned first; ties retain first import order. */
   priority?: number
+  /** Sources can be disabled without removing their entries. */
+  enabled?: boolean
 }
 
 /** Validate and normalize metadata before it crosses a registration or persistence boundary. */
@@ -29,11 +31,15 @@ export const normalizeDictionarySource = (source: unknown): DictionarySource => 
   if (candidate.priority !== undefined && !Number.isFinite(candidate.priority)) {
     throw new TypeError('Dictionary source priority must be a finite number')
   }
+  if (candidate.enabled !== undefined && typeof candidate.enabled !== 'boolean') {
+    throw new TypeError('Dictionary source enabled must be a boolean')
+  }
   return {
     id,
     name: candidate.name.trim(),
     format: candidate.format.trim(),
     ...(candidate.priority === undefined ? {} : { priority: candidate.priority }),
+    ...(candidate.enabled === undefined ? {} : { enabled: candidate.enabled }),
   }
 }
 
@@ -87,6 +93,7 @@ export interface DictionaryRepository {
   saveMany(entries: readonly DictionaryEntry[], source?: DictionarySource): Promise<void>
   lookup(word: string): Promise<DictionaryEntry[]>
   listSources(): Promise<DictionarySource[]>
+  updateSource(source: DictionarySource): Promise<void>
   clearSource(sourceId: string): Promise<void>
 }
 
@@ -111,5 +118,6 @@ export interface DictionaryServicePort extends DictionaryLookup {
   importText(sourceId: string, text: string): Promise<DictionaryImportSummary>
   importFile(sourceId: string, file: File): Promise<DictionaryImportSummary>
   listSources(): Promise<DictionarySource[]>
+  updateSource(source: DictionarySource): Promise<void>
   clearSource(sourceId: string): Promise<void>
 }

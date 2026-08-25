@@ -16,6 +16,13 @@ const cloneEntry = (entry: DictionaryEntry): DictionaryEntry => ({
 
 const cloneSource = (source: DictionarySource): DictionarySource => ({ ...source })
 
+const mergeSource = (previous: DictionarySource | undefined, next: DictionarySource): DictionarySource => ({
+  ...previous,
+  ...next,
+  ...(next.priority === undefined && previous?.priority !== undefined ? { priority: previous.priority } : {}),
+  ...(next.enabled === undefined && previous?.enabled !== undefined ? { enabled: previous.enabled } : {}),
+})
+
 /** Split metadata written by an earlier merge before deduplicating it again. */
 const splitJoinedMetadata = (value: string | undefined, separator: RegExp): string[] =>
   value === undefined ? [] : value.split(separator)
@@ -121,6 +128,7 @@ export class InMemoryDictionaryRepository implements DictionaryRepository {
   async lookup(word: string): Promise<DictionaryEntry[]> {
     const normalized = normalizeWord(word)
     const sourceIds = [...this.sources.entries()]
+      .filter(([, { source }]) => source.enabled !== false)
       .sort(([, left], [, right]) => compareSources(left, right))
       .map(([sourceId]) => sourceId)
     return sourceIds.flatMap((sourceId) => [...this.entries.values()]
@@ -130,8 +138,17 @@ export class InMemoryDictionaryRepository implements DictionaryRepository {
 
   async listSources(): Promise<DictionarySource[]> {
     return [...this.sources.values()]
-      .sort((left, right) => left.order - right.order)
+      .sort((left, right) => compareSources(left, right))
       .map(({ source }) => cloneSource(source))
+  }
+
+  async updateSource(source: DictionarySource): Promise<void> {
+    const metadata = checkedSource(source)
+    const previous = this.sources.get(metadata.id)
+    if (previous === undefined) {
+      throw new TypeError(`Dictionary source is not found: ${metadata.id}`)
+    }
+    this.sources.set(metadata.id, { source: cloneSource(mergeSource(previous.source, metadata)), order: previous.order })
   }
 
   async clearSource(sourceId: string): Promise<void> {
@@ -145,7 +162,7 @@ export class InMemoryDictionaryRepository implements DictionaryRepository {
   private addSource(source: DictionarySource): void {
     const previous = this.sources.get(source.id)
     this.sources.set(source.id, {
-      source: cloneSource(source),
+      source: cloneSource(mergeSource(previous?.source, source)),
       order: previous?.order ?? this.nextSourceOrder++,
     })
   }
@@ -171,6 +188,9 @@ type PersistedSource = {
   name: string
   format: string
   priority?: number
+  enabled?: boolean
+  /** Largest entry order used by this source; keeps new entries from colliding with existing ones. */
+  maxEntryOrder?: number
   order: number
 }
 
@@ -216,6 +236,7 @@ const persistedSource = (record: PersistedSource): DictionarySource => ({
   name: record.name,
   format: record.format,
   ...(record.priority === undefined ? {} : { priority: record.priority }),
+  ...(record.enabled === undefined ? {} : { enabled: record.enabled }),
 })
 
 const usableHeadwordIndex = (store: IDBObjectStore): boolean => {
@@ -451,35 +472,55 @@ export class IndexedDbDictionaryRepository implements DictionaryRepository {
     const store = transaction.objectStore(this.storeName)
     const completion = transactionDone(transaction)
     try {
-      const records = await requestResult<PersistedRecord[]>(store.getAll())
-      const sourceById = new Map<string, PersistedSource>()
-      const entriesByKey = new Map<string, PersistedEntry>()
-      for (const record of records) {
-        if (record.kind === 'source') sourceById.set(record.sourceId, record)
-        else if (record.kind === 'entry') entriesByKey.set(record.id, record)
-      }
-
-      let nextSourceOrder = records
-        .filter((record): record is PersistedSource => record.kind === 'source')
-        .reduce((max, record) => Math.max(max, record.order), -1) + 1
-      let nextEntryOrder = records
-        .filter((record): record is PersistedEntry => record.kind === 'entry')
-        .reduce((max, record) => Math.max(max, record.order), -1) + 1
       const sourceIds = new Set<string>()
       if (metadata !== undefined) sourceIds.add(metadata.id)
       for (const entry of normalizedEntries) sourceIds.add(entry.sourceId)
 
+      // Fetch only the source records we will touch, and the entries we might merge.
+      const sourceById = new Map<string, PersistedSource>()
+      await Promise.all([...sourceIds].map(async (sourceId) => {
+        const record = await requestResult<PersistedRecord | undefined>(store.get(sourceKey(sourceId)))
+        if (record !== undefined && record.kind === 'source') sourceById.set(sourceId, record)
+      }))
+
+      let nextSourceOrder = 0
+      for (const record of sourceById.values()) {
+        nextSourceOrder = Math.max(nextSourceOrder, record.order + 1)
+      }
+
+      const newSourceIds = new Set([...sourceIds].filter((sourceId) => !sourceById.has(sourceId)))
+      const entriesByKey = new Map<string, PersistedEntry>()
+      if (newSourceIds.size !== sourceIds.size) {
+        await Promise.all(normalizedEntries.map(async (entry) => {
+          if (newSourceIds.has(entry.sourceId)) return
+          const id = entryKey(entry.sourceId, entry.normalizedWord)
+          const record = await requestResult<PersistedRecord | undefined>(store.get(id))
+          if (record !== undefined && record.kind === 'entry') entriesByKey.set(id, record)
+        }))
+      }
+
+      // Track the next order for each source so new entries stay after existing ones.
+      const nextEntryOrderBySource = new Map<string, number>()
+      for (const [sourceId, previous] of sourceById) {
+        nextEntryOrderBySource.set(sourceId, (previous.maxEntryOrder ?? previous.order ?? 0) + 1)
+      }
+
+      // Persist source metadata first (merge previously stored priority/enabled/order).
       for (const sourceId of sourceIds) {
         const previous = sourceById.get(sourceId)
         const nextSource = metadata?.id === sourceId ? metadata : (previous === undefined ? fallbackSource(sourceId) : undefined)
         if (nextSource !== undefined) {
+          const priority = nextSource.priority !== undefined ? nextSource.priority : previous?.priority
+          const enabled = nextSource.enabled !== undefined ? nextSource.enabled : previous?.enabled
           const record: PersistedSource = {
             id: sourceKey(sourceId),
             kind: 'source',
             sourceId,
             name: nextSource.name,
             format: nextSource.format,
-            ...(nextSource.priority === undefined ? {} : { priority: nextSource.priority }),
+            ...(priority === undefined ? {} : { priority }),
+            ...(enabled === undefined ? {} : { enabled }),
+            maxEntryOrder: previous?.maxEntryOrder,
             order: previous?.order ?? nextSourceOrder++,
           }
           store.put(record)
@@ -487,16 +528,32 @@ export class IndexedDbDictionaryRepository implements DictionaryRepository {
         }
       }
 
+      // Persist entries, updating each source's max entry order as we go.
       for (const entry of normalizedEntries) {
         const id = entryKey(entry.sourceId, entry.normalizedWord)
         const previous = entriesByKey.get(id)
         const merged = previous === undefined
           ? entry
           : mergeDictionaryEntry(persistedEntry(previous), entry)
-        const record = serializeEntry(merged, id, previous?.order ?? nextEntryOrder++)
+        const nextEntryOrder = nextEntryOrderBySource.get(entry.sourceId) ?? 0
+        const order = previous?.order ?? nextEntryOrder
+        if (previous === undefined) nextEntryOrderBySource.set(entry.sourceId, nextEntryOrder + 1)
+        const record = serializeEntry(merged, id, order)
         store.put(record)
         entriesByKey.set(id, record)
+        const previousSource = sourceById.get(entry.sourceId)
+        if (previousSource !== undefined) {
+          previousSource.maxEntryOrder = Math.max(previousSource.maxEntryOrder ?? -1, order)
+        }
       }
+
+      // Write the updated max entry order back into each source record.
+      for (const [sourceId, record] of sourceById) {
+        if (record.maxEntryOrder !== undefined) {
+          store.put(record)
+        }
+      }
+
       await completion
     } catch (error) {
       await completion.catch(() => undefined)
@@ -514,11 +571,20 @@ export class IndexedDbDictionaryRepository implements DictionaryRepository {
       requestResult<PersistedEntry[]>(entryRequest),
       requestResult<PersistedRecord[]>(sourceRequest),
     ])
+    const disabledSourceIds = new Set<string>()
     const sourceRanks = new Map<string, { source: DictionarySource; order: number }>()
     for (const record of records) {
-      if (record.kind === 'source') sourceRanks.set(record.sourceId, { source: persistedSource(record), order: record.order })
+      if (record.kind === 'source') {
+        const source = persistedSource(record)
+        if (source.enabled === false) {
+          disabledSourceIds.add(record.sourceId)
+        } else {
+          sourceRanks.set(record.sourceId, { source, order: record.order })
+        }
+      }
     }
     return entries
+      .filter((entry) => !disabledSourceIds.has(entry.sourceId))
       .sort((left, right) => {
         const leftRank = sourceRanks.get(left.sourceId) ?? { source: fallbackSource(left.sourceId), order: Number.MAX_SAFE_INTEGER }
         const rightRank = sourceRanks.get(right.sourceId) ?? { source: fallbackSource(right.sourceId), order: Number.MAX_SAFE_INTEGER }
@@ -534,8 +600,37 @@ export class IndexedDbDictionaryRepository implements DictionaryRepository {
     )
     return records
       .filter((record): record is PersistedSource => record.kind === 'source')
-      .sort((left, right) => left.order - right.order)
+      .sort((left, right) => compareSources(
+        { source: persistedSource(left), order: left.order },
+        { source: persistedSource(right), order: right.order },
+      ))
       .map(persistedSource)
+  }
+
+  async updateSource(source: DictionarySource): Promise<void> {
+    const metadata = checkedSource(source)
+    const database = await this.open()
+    const transaction = database.transaction(this.storeName, 'readwrite')
+    const store = transaction.objectStore(this.storeName)
+    const completion = transactionDone(transaction)
+    try {
+      const previous = await requestResult<PersistedRecord | undefined>(store.get(sourceKey(metadata.id)))
+      if (previous === undefined || previous.kind !== 'source') {
+        throw new TypeError(`Dictionary source is not found: ${metadata.id}`)
+      }
+      const record: PersistedSource = {
+        ...previous,
+        name: metadata.name,
+        format: metadata.format,
+        ...(metadata.priority === undefined ? {} : { priority: metadata.priority }),
+        ...(metadata.enabled === undefined ? {} : { enabled: metadata.enabled }),
+      }
+      store.put(record)
+      await completion
+    } catch (error) {
+      await completion.catch(() => undefined)
+      throw error
+    }
   }
 
   async clearSource(sourceId: string): Promise<void> {

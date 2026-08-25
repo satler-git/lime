@@ -357,7 +357,7 @@ const parseIndex = (data: Uint8Array, fallbackSourceId: string): DictionarySourc
     ? parsed.title.trim()
     : 'Yomitan'
   const revision = typeof parsed.revision === 'string' ? parsed.revision : ''
-  const sourceId = sanitizeSourceId(title, fallbackSourceId)
+  const sourceId = `yomitan-${sanitizeSourceId(title, fallbackSourceId)}`
   const name = revision.length > 0 ? `${title} (${revision})` : title
 
   return { id: sourceId, name, format: 'yomitan-zip' }
@@ -622,7 +622,6 @@ async function parseYomitanZip(file: File, fallbackSourceId: string): Promise<Di
       activeFiles -= 1
       if (parseError === undefined) {
         parseError = new TypeError(`Yomitan archive member could not be decompressed: ${name}`)
-        if (name !== INDEX_FILE) skipped += 1
       }
       maybeDone()
     }
@@ -760,6 +759,7 @@ async function parseYomitanZip(file: File, fallbackSourceId: string): Promise<Di
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Yomitan archive could not be parsed'
     errors.push({ line: 1, message })
+    skipped += 1
   }
 
   if (source === undefined) {

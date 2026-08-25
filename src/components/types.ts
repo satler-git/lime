@@ -8,6 +8,13 @@ export type WordAnchor = {
   bottom: number
 }
 
+export type TargetWordSubEntry = {
+  pronunciation: string
+  partOfSpeech: string
+  definition: string
+  examples: ReactNode[]
+}
+
 export type TargetWordData = {
   word: string
   kind?: WordKind
@@ -16,4 +23,5 @@ export type TargetWordData = {
   definition: string
   examples: ReactNode[]
   inSrs: boolean
+  entries?: TargetWordSubEntry[]
 }
